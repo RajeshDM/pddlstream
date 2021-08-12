@@ -326,7 +326,8 @@ def main(teleport=False):
     args = parser.parse_args()
     print('Arguments:', args)
 
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect(True)
     with HideOutput():
         namo_problem = problem_fn(collisions=not args.cfree)
     saver = WorldSaver()
@@ -337,6 +338,7 @@ def main(teleport=False):
     print('Constants:', constant_map)
     print('Init:', init)
     print('Goal:', goal)
+    #exit()
 
     stream_info = {
         'compute-motion': StreamInfo(eager=True, p_success=0),

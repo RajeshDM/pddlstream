@@ -27,6 +27,7 @@ from examples.pybullet.pr2.run import post_process
 from examples.pybullet.utils.pybullet_tools.utils import draw_base_limits, WorldSaver, has_gui, str_from_object
 
 from examples.pybullet.tamp.problems import PROBLEMS
+from icecream import ic
 
 # TODO: collapse similar streams into a single stream when reodering
 
@@ -97,6 +98,9 @@ def pddlstream_from_problem(problem, base_limits=None, collisions=True, teleport
         else:
             goal_formula.append(literal)
     goal_formula = And(*goal_formula)
+    ic (init)
+    #print (goal_formula)
+    #exit()
 
     custom_limits = {}
     if base_limits is not None:
@@ -150,6 +154,7 @@ def main(verbose=True):
     problem_fn = problem_fn_from_name[args.problem]
 
     connect(use_gui=args.viewer)
+    #connect(True)
     with HideOutput():
         problem = problem_fn(num=args.number)
     draw_base_limits(problem.base_limits, color=(1, 0, 0))
@@ -179,6 +184,7 @@ def main(verbose=True):
     print('Init:', init)
     print('Goal:', goal)
     print('Streams:', str_from_object(set(stream_map)))
+    #exit()
 
     success_cost = 0 if args.optimal else INF
     planner = 'ff-astar' if args.optimal else 'ff-wastar3'

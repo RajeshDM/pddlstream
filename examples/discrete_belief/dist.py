@@ -198,6 +198,7 @@ class DDist(DiscreteDist):
         """
         if not z:
             z = sum(self.prob(e) for e in self.support())
+        #print (z)
         assert z > 0.0, 'degenerate distribution ' + str(self)
         alpha = 1.0 / z
         newD = {}

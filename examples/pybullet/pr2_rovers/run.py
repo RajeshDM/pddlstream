@@ -152,7 +152,8 @@ def main():
     if args.problem not in problem_fn_from_name:
         raise ValueError(args.problem)
     problem_fn = problem_fn_from_name[args.problem]
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect(True)
     with HideOutput():
         problem = problem_fn()
     saver = WorldSaver()

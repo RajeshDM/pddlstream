@@ -26,6 +26,7 @@ from examples.pybullet.utils.pybullet_tools.utils import set_pose, get_pose, con
 from examples.pybullet.utils.pybullet_tools.pr2_primitives import Conf, get_ik_ir_gen, get_motion_gen, get_stable_gen, \
     get_grasp_gen, Attach, Detach, apply_commands, Trajectory, get_base_limits
 from examples.discrete_belief.run import revisit_mdp_cost, MAX_COST, clip_cost
+from icecream import ic
 
 
 def pddlstream_from_state(state, teleport=False):
@@ -109,6 +110,20 @@ def pddlstream_from_state(state, teleport=False):
            [('On', b, s) for b, s in task.goal_on] + \
            [('Localized', b) for b in task.goal_localized] + \
            [('Registered', b) for b in task.goal_registered])
+
+    #ic (init)
+    '''
+    for item in init:
+        #ic (item)
+        if item[0] == "Observable":
+            ic ("observable")
+            try :
+                ic (item[1].__dict__)
+            except:
+                pass
+    '''
+    #ic (goal)
+    #exit()
 
     stream_map = {
         'sample-pose': from_gen_fn(get_stable_gen(task)),
@@ -269,6 +284,7 @@ def main(time_step=0.01):
     # TODO: nonuniform distribution to bias towards other actions
     # TODO: closed world and open world
     real_world = connect(use_gui=not args.viewer)
+    #connect(False)
     add_data_path()
     task, state = get_problem1(localized='rooms', p_other=0.25) # surfaces | rooms
     for body in task.get_bodies():

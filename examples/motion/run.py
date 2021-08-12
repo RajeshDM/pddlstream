@@ -11,7 +11,7 @@ from pddlstream.language.generator import from_gen_fn, from_test
 from pddlstream.utils import read, user_input, str_from_object, INF, Profiler
 from pddlstream.language.constants import PDDLProblem, print_solution
 from pddlstream.algorithms.constraints import PlanConstraints
-
+from icecream import ic
 
 ARRAY = np.array # No hashing
 #ARRAY = list # No hashing
@@ -23,7 +23,7 @@ def create_problem(goal, obstacles=(), regions={}, max_distance=.5):
     stream_pddl = read(os.path.join(directory, 'stream.pddl'))
     constant_map = {}
 
-    q0 = ARRAY([0, 0])
+    q0 = ARRAY([0.1, 0.9])
     init = [
         ('Conf', q0),
         ('AtConf', q0),
@@ -85,6 +85,9 @@ def main(max_time=20):
     parser = create_parser()
     args = parser.parse_args()
     print('Arguments:', args)
+
+    #args.algorithm = 'focused'
+    #ic (args.algorithm)
 
     obstacles = [
         create_box((.5, .5), (.2, .2))

@@ -21,6 +21,7 @@ from pddlstream.language.external import defer_shared, never_defer
 from examples.pybullet.tamp.streams import get_cfree_approach_pose_test, get_cfree_pose_pose_test, get_cfree_traj_pose_test, \
     move_cost_fn
 from collections import namedtuple
+from icecream import ic
 
 BASE_CONSTANT = 1
 BASE_VELOCITY = 0.5
@@ -228,7 +229,8 @@ def main(partial=False, defer=False, verbose=True):
     args = parser.parse_args()
     print('Arguments:', args)
 
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect (True)
     problem_fn = cooking_problem
     # holding_problem | stacking_problem | cleaning_problem | cooking_problem
     # cleaning_button_problem | cooking_button_problem
@@ -262,8 +264,14 @@ def main(partial=False, defer=False, verbose=True):
     print('Streams:', str_from_object(set(stream_map)))
     print(SEPARATOR)
 
+
+    #args.algorithm = 'focused'
+    #ic (args.algorithm)
+    #exit()
+
     with Profiler():
         with LockRenderer(lock=not args.enable):
+        #with LockRenderer(lock=False):
             solution = solve(pddlstream_problem, algorithm=args.algorithm, unit_costs=args.unit,
                              stream_info=stream_info, success_cost=INF, verbose=True, debug=False)
             saver.restore()
@@ -271,11 +279,13 @@ def main(partial=False, defer=False, verbose=True):
     print_solution(solution)
     plan, cost, evaluations = solution
     if (plan is None) or not has_gui():
-        disconnect()
-        return
+        pass
+        #disconnect()
+        #return
 
     print(SEPARATOR)
-    with LockRenderer(lock=not args.enable):
+    #with LockRenderer(lock=not args.enable):
+    with LockRenderer(lock=False):
         commands = post_process(problem, plan)
         problem.remove_gripper()
         saver.restore()
@@ -283,7 +293,9 @@ def main(partial=False, defer=False, verbose=True):
     #restore_state(state_id)
     saver.restore()
     wait_if_gui('Execute?')
-    if args.simulate:
+    print ("commands ", commands)
+    #if args.simulate:
+    if False:
         control_commands(commands)
     else:
         apply_commands(State(), commands, time_step=0.01)

@@ -26,6 +26,7 @@ from pddlstream.language.statistics import load_stream_statistics, \
     write_stream_statistics, compute_plan_effort
 from pddlstream.language.stream import Stream, StreamResult
 from pddlstream.utils import INF, implies, str_from_object, safe_zip
+from icecream import ic
 
 def get_negative_externals(externals):
     negative_predicates = list(filter(lambda s: type(s) is Predicate, externals)) # and s.is_negative()
@@ -203,6 +204,11 @@ def solve_abstract(problem, constraints=PlanConstraints(), stream_info={}, repla
 
         ################
 
+        #ic (stream_plan is INFEASIBLE)
+        #ic (not eager_instantiator)
+        #ic (not skeleton_queue)
+        #ic (not disabled)
+
         if (stream_plan is INFEASIBLE) and (not eager_instantiator) and (not skeleton_queue) and (not disabled):
             break
         if not is_plan(stream_plan):
@@ -241,6 +247,7 @@ def solve_abstract(problem, constraints=PlanConstraints(), stream_info={}, repla
     })
     print('Summary: {}'.format(str_from_object(summary, ndigits=3))) # TODO: return the summary
 
+    #exit()
     write_stream_statistics(externals, verbose)
     return store.extract_solution()
 

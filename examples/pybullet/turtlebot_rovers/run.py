@@ -21,6 +21,7 @@ from examples.pybullet.namo.stream import get_custom_limits as get_base_custom_l
 from examples.pybullet.turtlebot_rovers.problems import PROBLEMS, get_base_joints, KINECT_FRAME
 from examples.pybullet.turtlebot_rovers.streams import get_reachable_test, get_inv_vis_gen, get_inv_com_gen, \
     get_above_gen, get_motion_fn, get_cfree_ray_test, VIS_RANGE
+from icecream import ic
 
 CLASSES = [
     'blue', 'red', 'rock', 'soil',
@@ -80,6 +81,11 @@ def pddlstream_from_problem(problem, collisions=True, **kwargs):
     if problem.limits is not None:
         for rover in problem.rovers:
             custom_limits.update(get_base_custom_limits(rover, problem.limits))
+
+    ic (init)
+    ic (goal_formula)
+    ic (goal_literals)
+    #exit()
 
     stream_map = {
         'test-cfree-ray-conf': from_test(get_cfree_ray_test(problem, collisions=collisions)),
@@ -155,7 +161,8 @@ def main():
     if args.problem not in problem_fn_from_name:
         raise ValueError(args.problem)
     problem_fn = problem_fn_from_name[args.problem]
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect(True)
     with HideOutput():
         rovers_problem = problem_fn()
     saver = WorldSaver()

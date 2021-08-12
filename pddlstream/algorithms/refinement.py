@@ -16,6 +16,7 @@ from pddlstream.language.stream import StreamResult, Result
 from pddlstream.language.statistics import check_effort, compute_plan_effort
 from pddlstream.language.object import Object, OptimisticObject
 from pddlstream.utils import INF, safe_zip, get_mapping, implies, elapsed_time
+from icecream import ic
 
 CONSTRAIN_STREAMS = False
 CONSTRAIN_PLANS = False
@@ -26,8 +27,12 @@ def is_refined(stream_plan):
     if not is_plan(stream_plan):
         return True
     # TODO: some of these opt_index equal None
-    return all((result.opt_index is None) or result.is_refined()
-               for result in stream_plan)
+    opt_indexes = [(result.opt_index is None) or result.is_refined()
+               for result in stream_plan]
+    opt_indexes_2 = [(result,opt_indexes[i]) for i,result in enumerate(stream_plan)]
+    #return all((result.opt_index is None) or result.is_refined()
+    #           for result in stream_plan)
+    return all(opt_indexes)
 
 ##################################################
 
@@ -54,14 +59,19 @@ def prune_high_effort_streams(streams, max_effort=INF, **effort_args):
 def optimistic_process_streams(evaluations, streams, complexity_limit=INF, **effort_args):
     optimistic_streams = prune_high_effort_streams(streams, **effort_args)
     instantiator = Instantiator(optimistic_streams)
+    count_evals = 0
     for evaluation, node in evaluations.items():
         if node.complexity <= complexity_limit:
             instantiator.add_atom(evaluation, node.complexity)
+            count_evals += 1
     results = []
+    #print (count_evals)
     while instantiator and (instantiator.min_complexity() <= complexity_limit):
         results.extend(optimistic_process_instance(instantiator, instantiator.pop_stream()))
         # TODO: instantiate and solve to avoid repeated work
+    #TODO (rajesh): CHANGED exhausted - need to change back(changed back for now)
     exhausted = not instantiator
+    #exhausted = False
     return results, exhausted
 
 ##################################################
@@ -159,7 +169,13 @@ def hierarchical_plan_streams(evaluations, externals, results, optimistic_solve_
     if MAX_DEPTH <= depth:
         return OptSolution(None, None, INF), depth
     stream_plan, opt_plan, cost = optimistic_solve_fn(evaluations, results, constraints)
-    if not is_plan(opt_plan) or is_refined(stream_plan):
+    is_refined_stream_plan = is_refined(stream_plan)
+    #ic (is_plan(opt_plan))
+    #ic(is_refined_stream_plan)
+    #ic (opt_plan)
+    #ic (stream_plan)
+    #if not is_plan(opt_plan) or is_refined(stream_plan):
+    if not is_plan(opt_plan) or is_refined_stream_plan:
         return OptSolution(stream_plan, opt_plan, cost), depth
     #action_plan, preimage_facts = opt_plan
     #dump_plans(stream_plan, action_plan, cost)
@@ -195,8 +211,11 @@ def iterative_plan_streams(all_evaluations, externals, optimistic_solve_fn, comp
     start_time = time.time()
     complexity_evals = {e: n for e, n in all_evaluations.items() if n.complexity <= complexity_limit}
     num_iterations = 0
+    prev_results = []
+    results = []
     while True:
         num_iterations += 1
+        #prev_results = results[:]
         results, exhausted = optimistic_process_streams(complexity_evals, externals, complexity_limit, **effort_args)
         opt_solution, final_depth = hierarchical_plan_streams(
             complexity_evals, externals, results, optimistic_solve_fn, complexity_limit,
@@ -204,6 +223,11 @@ def iterative_plan_streams(all_evaluations, externals, optimistic_solve_fn, comp
         stream_plan, action_plan, cost = opt_solution
         print('Attempt: {} | Results: {} | Depth: {} | Success: {} | Time: {:.3f}'.format(
             num_iterations, len(results), final_depth, is_plan(action_plan), elapsed_time(start_time)))
+        #print (results)
+        #print (list(set(results) - set(prev_results)))
+        #print (len(list(set(results) - set(prev_results))))
+        #print (len(prev_results))
+
         if is_plan(action_plan):
             return OptSolution(stream_plan, action_plan, cost)
         if final_depth == 0:

@@ -35,6 +35,7 @@ from pddlstream.language.temporal import SimplifiedDomain, solve_tfd
 from pddlstream.language.write_pddl import get_problem_pddl
 from pddlstream.language.object import Object
 from pddlstream.utils import Verbose, INF, topological_sort, get_ancestors
+from icecream import ic
 
 RENAME_ACTIONS = False
 #RENAME_ACTIONS = not USE_FORBID
@@ -380,4 +381,6 @@ def plan_streams(evaluations, goal_expression, domain, all_results, negative, ef
         # TODO: handle deferred streams
         assert all(isinstance(action, Action) for action in opt_plan.action_plan)
         opt_plan.action_plan[:] = temporal_plan
+    #ic (node_from_atom)
+    #exit()
     return OptSolution(stream_plan, opt_plan, cost)
