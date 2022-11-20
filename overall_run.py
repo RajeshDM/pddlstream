@@ -6,8 +6,10 @@
 #import examples.pybullet.quals_exp_3.run as pr2
 #import examples.pybullet.quals_exp_4.run as pr2
 #import examples.pybullet.exp_5.run as pr2
-import examples.pybullet.exp_6_relevant_objects.run as pr2
-import machine_common_sense as mcs
+#import examples.pybullet.exp_6_relevant_objects.run as pr2
+import examples.pybullet.exp_7_relevant_objects_binary_props.run as pr2
+#import examples.pybullet.exp_8_relevant_objects_on_path.run as pr2
+#mport machine_common_sense as mcs
 import yaml
 import pickle
 import os
@@ -35,7 +37,7 @@ class PDDLStreamAgent:
             raise FileNotFoundError("You might not set up mcs config and unity path yet. Please run 'bash setup_unity.sh'.")
         '''
         level = "oracle"
-        start_scene_number = 6
+        start_scene_number = 7
 
         self.env = McsEnv(task="interaction_scenes", scene_type='debug', start_scene_number=start_scene_number)
         self.controller = MetaController(self.env,level)

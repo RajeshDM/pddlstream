@@ -12,12 +12,23 @@ import pstats
 import io
 
 from collections import defaultdict, deque, Counter, namedtuple
+#from pddlstream.language.constants import Action
 from heapq import heappush, heappop
+import itertools
 
 import numpy as np
+from icecream import ic
+#from pddlstream import pddlstream
+import pddlstream
+#from pddlstream.language.constants import And, Equal, TOTAL_COST, print_solution, PDDLProblem
+import pddlgym
+import examples
+
+Action = namedtuple('Action', ['name', 'args'])
 
 INF = float('inf')
 SEPARATOR = '\n' + 80*'-'  + '\n'
+AND = 'and'
 
 try:
    user_input = raw_input
@@ -233,6 +244,1054 @@ def check_memory(max_memory):
     print('Peak memory of {} KB exceeds memory limit of {} KB'.format(
         int(peak_memory), int(max_memory)))
     return False
+
+
+def get_write_string_for_predicate(predicate):
+    predicate_write_string = ""
+    return predicate_write_string
+    pass
+
+def update_object_score(obj_scores, problem):
+    #for obj in problem.relevant_object :
+    #    if obj in obj_scores
+    ic (obj_scores)
+    ic (problem.relevant_objects)
+    for obj,score in obj_scores.items():
+        for obstacle in problem.relevant_objects :
+            if str(obstacle) in obj:
+                obj_scores[obstacle] = 1
+        ic (obj,score)
+    ic (obj_scores)
+
+def get_init_from_evals(evaluations):
+    init_from_eval = []
+    for evaluation in evaluations:
+        #ic (evaluation.head)
+        #ic (evaluation.head.function)
+        #ic (evaluation.head.__dict__)
+        #ic (evaluation.head.args)
+        init_from_eval_curr = [None] * (len(evaluation.head.args) + 1)
+        #if evaluation.head.function not in extra_:
+        init_from_eval_curr[0] = evaluation.head.function
+        for arg_idx,arg in enumerate(evaluation.head.args):
+            #ic (type(arg))
+            #ic (arg.__dict__)
+            #ic (type(arg.value))
+            '''
+            if type(arg.value) == str :
+                init_from_eval_curr[arg_idx+1] = arg
+            elif type(ar) :
+                ic ("Not string")
+            '''
+            init_from_eval_curr[arg_idx+1] = arg.value
+
+        init_from_eval.append(init_from_eval_curr)
+
+    return init_from_eval
+
+def get_init_from_opt_evals(opt_evaluations):
+    init_from_eval = []
+    opt_obj_conversion = {}
+    for evaluation in opt_evaluations:
+        #ic (evaluation.head)
+        #ic (evaluation.head.function)
+        #ic (evaluation.head.__dict__)
+        #ic (evaluation.head.args)
+        init_from_eval_curr = [None] * (len(evaluation.head.args) + 1)
+        #if evaluation.head.function not in extra_:
+        init_from_eval_curr[0] = evaluation.head.function
+        for arg_idx,arg in enumerate(evaluation.head.args):
+            #ic (type(arg))
+            '''
+            if type(arg) == pddlstream.language.object.OptimisticObject:
+                init_from_eval_curr[arg_idx+1] = arg.pddl[1:]
+                opt_obj_conversion[arg.pddl[1:]] = arg.pddl
+            else :
+                init_from_eval_curr[arg_idx+1] = arg.value
+            '''
+            init_from_eval_curr[arg_idx+1] = arg
+            #ic (arg.value)
+            #ic (arg.__dict__)
+            #ic (type(arg.value))
+            '''
+            if type(arg.value) == str :
+                init_from_eval_curr[arg_idx+1] = arg
+            elif type(ar) :
+                ic ("Not string")
+            '''
+
+        init_from_eval.append(init_from_eval_curr)
+
+    #ic (init_from_eval)
+    #ic (opt_obj_conversion)
+    #exit()
+    return init_from_eval,opt_obj_conversion
+
+def update_init_from_negative(init,negative):
+    ic (negative)
+    ic (init)
+    negative_streams_from_init = []
+    for elem in init :
+        if elem[0] == '~test-cfree-negative':
+            negative_streams_from_init.append(elem)
+
+    for neg in negative:
+        if hasattr(neg,'instances'):
+            for instance in neg.instances:
+                ic (instance)
+                found = False
+                #ic (instance[1].__dict__)
+                #ic (instance[1])
+                #ic (type(instance[0][0]))
+                #ic (type(instance[0][1]))
+                #ic (instance[0][0].__dict__)
+                #ic (instance[0][1].__dict__)
+                opt_type = pddlstream.language.object.OptimisticObject
+                if True :
+                #if type(instance[0][0]) != opt_type and  type(instance[0][1]) != opt_type :
+                    #if ['~test-cfree-negative',instance[0][0].value,instance[0][1].value] in init :
+                    #    continue
+                    for elem in negative_streams_from_init:
+                        if type(instance[0][0]) == opt_type or  type(instance[0][1]) == opt_type :
+                            break
+                        if (elem[1] == instance[0][0].value).all() and (elem[2] == instance[0][1].value).all():
+                            found = True
+                            break
+                    if found == True:
+                        continue
+
+                    if type(instance[0][0]) == opt_type:
+                        #ic (instance[0][0].__dict__)
+                        arg_1 = instance[0][0].repr_name
+                    else :
+                        arg_1 = instance[0][0].value
+                    if type(instance[0][1]) == opt_type:
+                        arg_2 = instance[0][1].repr_name
+                    else:
+                        arg_2 = instance[0][1].value
+
+                    #init.append(['cfree',instance[0][0].value,instance[0][1].value])
+                    init.append(['cfree',arg_1, arg_2])
+
+    return init
+
+
+def add_negative_to_init_v2(init,negative):
+    for neg in negative :
+        negative_facts = []
+        blocked_predicate = neg.blocked_predicate
+        number_objects = len(neg.domain)
+        domain_types = {}
+        ic (neg.domain)
+        ic (neg.domain[0])
+        #domain_types_found = {}
+        #domain_types_position = {}
+        #ic (neg.certified)
+        #ic (neg.certified[0])
+        #ic (list(neg.certified[0][1:]))
+        certified = list(neg.certified[0][1:])
+        for i,domain in enumerate(neg.domain):
+            #domain_types.append((domain[0],len(domain)-1))
+            domain_types[domain[0]] = len(domain) -1
+            #domain_types[domain[0]] = len(domain) -1
+            domain_types[domain[0]] = []
+            #ic (neg.certified[0][1:])
+            for j,obj in enumerate(domain[1:]):
+                if obj in certified:
+                    domain_types[domain[0]].append(j)
+                    certified.remove(obj)
+            #for obj_info in  neg.certified[0][1:]:
+            #ic (obj_info)
+            #ic (ic (domain[1:]))
+            #useful_pos =
+            #    if obj_info in domain[1:]:
+            #        domain_types[domain[0]].append(domain[1:].index(obj_info))
+            '''
+            domain_types_found[domain[0]] = -1
+            if domain[0] in domain_types_position:
+                domain_types_position[domain[0]].append(i)
+            else :
+                domain_types_position[domain[0]] = [i]
+            '''
+
+        #ic (negative)
+        ic(domain_types)
+        domain_type_objects = {}
+        #ic (init)
+        flag = 0
+        for elem in init:
+            #ic (elem)
+            #if elem[0] == 'cfreeapproachpose':
+            #if neg.certified[0][0] == 'cfreeapproachpose':
+            #    flag = 1
+            if elem[0] in domain_types:
+                #domain_types_found[elem[0]] = 1
+                domain_type_objects[elem[0]] = []
+                if elem[0] in domain_type_objects:
+                    #domain_type_objects[elem[0]].append(elem[1:1+domain_types[elem[0]]])
+                    for pos in domain_types[elem[0]]:
+                        domain_type_objects[elem[0]].append(elem[1+pos])
+                #else :
+                #    #domain_type_objects[elem[0]] = [elem[1]]
+                #    for pos in domain_types[elem[0]]:
+                #        domain_type_objects[elem[0]].append(elem[1+pos])
+                #    #domain_type_objects[elem[0]] = [elem[1:1+domain_types[elem[0]]]]
+            if elem[0] == blocked_predicate:
+                negative_facts.append(elem)
+
+        #ic (neg)
+        facts = generate_object_combinations(neg.certified,domain_types,domain_type_objects,domain_types_position,len(neg.domain))
+
+        for fact in facts :
+            fact_in_negative = False
+            #ic(fact)
+            for negative_fact in negative_facts:
+                neg_fact_found = True
+                #ic (negative_fact)
+                if len(fact) == len(negative_fact) :
+                    for pos_fact_obj, negative_fact_obj in zip(fact[1:],negative_fact[1:]):
+                        #ic (pos_fact_obj,negative_fact_obj)
+                        if type (pos_fact_obj) == np.ndarray:
+                            #ic ()
+                            #ic ((pos_fact_obj == negative_fact_obj).all())
+                            if not ((pos_fact_obj==negative_fact_obj).all()) :
+                                neg_fact_found = False
+                                break
+                        else :
+                            if pos_fact_obj != negative_fact_obj:
+                                neg_fact_found = False
+                                break
+                    #ic (neg_fact_found)
+                    if neg_fact_found == True :
+                        fact_in_negative = True
+                        break
+            if fact_in_negative == True :
+                continue
+            else :
+                init.append(fact)
+            #ic ("end of checking this fact")
+        #ic (facts)
+        #ic (init)
+    return init
+
+def add_negative_to_init(init, negative):
+    for neg in negative :
+        negative_facts = []
+        blocked_predicate = neg.blocked_predicate
+        number_objects = len(neg.domain)
+        domain_types = {}
+        #ic (neg.domain)
+        #ic (neg.domain[0])
+        domain_types_found = {}
+        domain_types_position = {}
+        #ic (neg.certified)
+        #ic (neg.certified[0])
+        #ic (list(neg.certified[0][1:]))
+        certified = list(neg.certified[0][1:])
+        for i,domain in enumerate(neg.domain):
+            #domain_types.append((domain[0],len(domain)-1))
+            #domain_types[domain[0]] = len(domain) -1
+            domain_types[domain[0]] = []
+            #ic (neg.certified[0][1:])
+            for j,obj in enumerate(domain[1:]):
+                if obj in certified:
+                    domain_types[domain[0]].append(j)
+                    certified.remove(obj)
+            #for obj_info in  neg.certified[0][1:]:
+                #ic (obj_info)
+                #ic (ic (domain[1:]))
+                #useful_pos =
+            #    if obj_info in domain[1:]:
+            #        domain_types[domain[0]].append(domain[1:].index(obj_info))
+            domain_types_found[domain[0]] = -1
+            if domain[0] in domain_types_position:
+                domain_types_position[domain[0]].append(i)
+            else :
+                domain_types_position[domain[0]] = [i]
+
+        #ic (negative)
+        #ic(domain_types)
+        domain_type_objects = {}
+        #ic (init)
+        flag = 0
+        for elem in init:
+            #ic (elem)
+            #if elem[0] == 'cfreeapproachpose':
+            #if neg.certified[0][0] == 'cfreeapproachpose':
+            #    flag = 1
+            if elem[0] in domain_types:
+                #ic (elem[0])
+                domain_types_found[elem[0]] = 1
+                #ic (domain_type_objects)
+                #domain_type_objects[elem[0]] = []
+                if elem[0] in domain_type_objects:
+                    #domain_type_objects[elem[0]].append(elem[1:1+domain_types[elem[0]]])
+                    for pos in domain_types[elem[0]]:
+                        domain_type_objects[elem[0]].append(elem[1+pos])
+                else :
+                    domain_type_objects[elem[0]] = [elem[1]]
+                    for pos in domain_types[elem[0]][1:]:
+                        domain_type_objects[elem[0]].append(elem[1+pos])
+                    #domain_type_objects[elem[0]] = [elem[1:1+domain_types[elem[0]]]]
+            if elem[0] == blocked_predicate:
+                negative_facts.append(elem)
+
+        domain_not_satisfied = False
+        for key,value in domain_types_found.items():
+            if value == -1 :
+                domain_not_satisfied = True
+                break
+        #ic (neg)
+        #ic (neg.__dict__)
+        #ic (neg.certified,domain_types,domain_type_objects)
+        if domain_not_satisfied == True :
+            ic (domain_not_satisfied)
+            return init
+        facts = generate_object_combinations(neg.certified,domain_types,domain_type_objects,domain_types_position,len(neg.domain))
+        if flag == 1 :
+            exit()
+        #exit()
+
+        for fact in facts :
+            fact_in_negative = False
+            #ic(fact)
+            for negative_fact in negative_facts:
+                neg_fact_found = True
+                #ic (negative_fact)
+                if len(fact) == len(negative_fact) :
+                    for pos_fact_obj, negative_fact_obj in zip(fact[1:],negative_fact[1:]):
+                        #ic (pos_fact_obj,negative_fact_obj)
+                        if type (pos_fact_obj) == np.ndarray:
+                            #ic ()
+                            #ic ((pos_fact_obj == negative_fact_obj).all())
+                            if not ((pos_fact_obj==negative_fact_obj).all()) :
+                                neg_fact_found = False
+                                break
+                        else :
+                            if pos_fact_obj != negative_fact_obj:
+                                neg_fact_found = False
+                                break
+                    #ic (neg_fact_found)
+                    if neg_fact_found == True :
+                        fact_in_negative = True
+                        break
+            if fact_in_negative == True :
+                continue
+            else :
+                init.append(fact)
+            #ic ("end of checking this fact")
+        #ic (facts)
+        #ic (init)
+    return init
+
+def generate_object_combinations(certified,domain_types,domain_type_objects,domain_types_position,number_domains):
+    lists_to_use = [[certified[0][0]]]
+
+    #ic (lists_to_use)
+    #ic (domain_types)
+    #ic (domain_type_objects)
+    #lists_to_use_arguments_from_types = [domain_type_objects[domain] for domain in domain_types.keys() if domain in domain_type_objects]
+    #lists_to_use_arguments = [domain_type_objects[domain] for domain in domain_types.keys() if domain in domain_type_objects]
+    #ic (max(domain_types_position.values()))
+    lists_to_use_arguments = [None] * number_domains
+
+    #for i,argument_lists in enumerate(lists_to_use_arguments):
+    #
+    #    domain_types_position
+    for domain,positions in domain_types_position.items():
+        for position in positions :
+            #if len(domain_type_objects[domain]) > 1 :
+            #    lists_to_use_arguments[position] = [domain_type_objects[domain]]
+            #else :
+            lists_to_use_arguments[position] = domain_type_objects[domain]
+
+    lists_to_use += lists_to_use_arguments
+    #ic (lists_to_use_arguments)
+    #ic (lists_to_use)
+    #ic (lists_to_use)
+    facts = list(itertools.product(*lists_to_use))
+    #ic (facts)
+    #ic (len(facts))
+    new_facts = []
+    for fact in facts:
+        new_fact = []
+        for elem in fact:
+            if type(elem) != list:
+                new_fact.append(elem)
+            else :
+                for obj in elem:
+                    new_fact.append(obj)
+        new_facts.append(tuple(new_fact))
+    #ic (new_facts)
+    return new_facts
+    #return facts
+
+def get_objects_from_predicate(predicate,added_objects,obj_find_phase=False):
+    #predicate_write_string = ""
+    '''
+    This function creates a string name for all the variables
+    Currently only handles when the continuous values have 2 numbers and nothing else
+    '''
+    #ic (predicate)
+    #ic (added_objects)
+
+    kuka_primitives = examples.pybullet.utils.pybullet_tools.kuka_primitives
+    kuka_primitives_all = [examples.pybullet.utils.pybullet_tools.kuka_primitives.BodyPose,
+                       examples.pybullet.utils.pybullet_tools.kuka_primitives.BodyGrasp,
+                       examples.pybullet.utils.pybullet_tools.kuka_primitives.BodyConf,
+                       examples.pybullet.utils.pybullet_tools.kuka_primitives.BodyPath
+                       ]
+    '''
+    kuka_primitives_all = []
+    '''
+
+    objects = []
+    elem = predicate
+    ##ic (predicate)
+    #ic (added_objects)
+    obj1_start_str = None
+    obj2_start_str = None
+    obj3_start_str = None
+    obj_1_cont = False
+    obj_2_cont = False
+    obj_3_cont = False
+    sep_string = "_"
+    conversion = {}
+    #for objs in elem[1:]:
+    #    conversion[objs] = None
+    #for arg in
+    elem_values = [None]
+    #ic (elem)
+    for arg in elem[1:]:
+        #ic (arg)
+        #ic (type(arg))
+        #ic (arg.__dict__)
+        if type(arg) == pddlstream.language.object.OptimisticObject:
+            #init_from_eval_curr[arg_idx + 1] = arg.pddl[1:]
+            #opt_obj_conversion[arg.pddl[1:]] = arg.pddl
+            #ic ("Opt obj", arg)
+            elem_values.append(arg.pddl[1:])
+        else:
+            #ic (arg.__dict__)
+            #ic (type(arg.value))
+            #if type(arg.value) != np.ndarray:
+            if type(arg.value) in kuka_primitives_all:
+                #ic(arg.value.__dict__)
+                if type(arg.value) == kuka_primitives.BodyPose :
+                    elem_values.append(arg.value.pose[0])
+                if type(arg.value) == kuka_primitives.BodyConf :
+                    elem_values.append(arg.value.configuration)
+
+            else :
+                #ic (arg.value.__dict__)
+                elem_values.append(arg.value)
+                #init_from_eval_curr[arg_idx + 1] = arg.value
+
+    #ic (elem)
+    #ic (elem_values)
+    #ic (elem)
+    #ic (elem_values)
+    #obj_1_cont = False
+    #obj_2_cont = False
+    obj_start_str, obj_cont = get_cont_information(elem,domain_name="kuka")
+    #obj_start_str, obj_cont = get_cont_information(elem,domain_name="discrete_tamp_3d")
+    #ic (elem_values)
+
+    if obj_cont == None and obj_start_str == []:
+        return [],None
+
+    if len(elem) == 1:
+        return [],None
+    for i in range(1,len(elem)):
+        if "cost" in str(elem[i]) \
+                or "dist" in str(elem[i]):
+            return objects,None
+        if obj_cont[i] == True:
+            #obj_str_to_add = obj1_start_str + sep_string + str(elem_values[1][0]) + sep_string + str(elem_values[1][1])
+            obj_str_to_add = obj_start_str[i]
+            ic (i)
+            ic (obj_str_to_add )
+            ic (elem)
+            ic (elem_values)
+            for str_component in elem_values[i]:
+                obj_str_to_add  += sep_string
+                obj_str_to_add += str(str_component)
+        else:
+            obj_str_to_add = str(elem_values[i])
+        if obj_find_phase :
+            if obj_str_to_add not in added_objects:
+                objects.append(obj_str_to_add)
+                #added_objects.append(str(elem[1]))
+                added_objects.append(obj_str_to_add)
+                conversion[obj_str_to_add] = elem[i]
+        else:
+            objects.append(obj_str_to_add)
+        pass
+
+    ic (elem,conversion)
+    if obj_find_phase:
+        return objects, conversion
+    return objects, None
+
+    if len(elem) == 1:
+        return [],None
+    elif len(elem) == 2:
+        if "cost" in str(elem[1]) \
+            or "dist" in str(elem[1]):
+            return objects,None
+        if obj_1_cont == True:
+            #obj_str_to_add = obj1_start_str + sep_string + str(elem_values[1][0]) + sep_string + str(elem_values[1][1])
+            obj_str_to_add = obj1_start_str
+            for str_component in elem_values[1]:
+                obj_str_to_add  += sep_string
+                obj_str_to_add += str(str_component)
+        else:
+            obj_str_to_add = str(elem_values[1])
+        if obj_find_phase :
+            if obj_str_to_add not in added_objects:
+                objects.append(obj_str_to_add)
+                #added_objects.append(str(elem[1]))
+                added_objects.append(obj_str_to_add)
+                conversion[obj_str_to_add] = elem[1]
+        else:
+            objects.append(obj_str_to_add)
+    elif len(elem) == 3:
+        if "cost" in str(elem[1]) or "cost" in str(elem[2]) \
+            or "dist" in str(elem[1]) or "dist" in str(elem[2]):
+            #continue
+            return objects,None
+        if obj_1_cont == True:
+            #obj_str_to_add = obj1_start_str + sep_string + str(elem_values[1][0]) + sep_string + str(elem_values[1][1])
+            obj_str_to_add = obj1_start_str
+            for str_component in elem_values[1]:
+                obj_str_to_add  += sep_string
+                obj_str_to_add += str(str_component)
+
+        else:
+            obj_str_to_add = str(elem_values[1])
+        #if str(elem[1]) not in added_objects:
+        if obj_find_phase :
+            if obj_str_to_add not in added_objects:
+                objects.append(obj_str_to_add)
+                added_objects.append(obj_str_to_add)
+                conversion[obj_str_to_add] = elem[1]
+        else :
+            objects.append(obj_str_to_add)
+        if obj_2_cont == True:
+            #obj_str_to_add = obj2_start_str + sep_string + str(elem_values[2][0]) + sep_string + str(elem_values[2][1])
+            obj_str_to_add = obj2_start_str
+            for str_component in elem_values[2]:
+                obj_str_to_add  += sep_string
+                obj_str_to_add += str(str_component)
+        else:
+            obj_str_to_add = str(elem_values[2])
+        #if str(elem[2]) not in added_objects:
+        if obj_find_phase :
+            if obj_str_to_add not in added_objects:
+                objects.append(obj_str_to_add)
+                added_objects.append(obj_str_to_add)
+                conversion[obj_str_to_add] = elem[2]
+        else :
+            objects.append(obj_str_to_add)
+
+    #ic (added_objects)
+    #ic (elem)
+    #ic (objects)
+
+    if obj_find_phase :
+        return objects,conversion
+    return objects,None
+    #pass
+
+#def write_init_to_file(init, goal):
+def generate_pddl_from_init_goal(init, goal,problem='unity_1'):
+
+    #ic ("writing to file")
+    file_write_str = ""
+    #file_write_str += "(define (problem unity_1)\n(:domain unity_1) \n (:objects\n"
+    file_write_str += "(define (problem " +problem+")\n(:domain "+problem+") \n (:objects\n"
+    obj_conversions = {}
+    len (init)
+
+    added_objects = []
+    for elem in init:
+        elem = list(elem)
+        #ic (elem)
+        #predicate_write_string = get_write_string_for_predicate(elem,added_objects)
+        current_objects,init_conversion = get_objects_from_predicate(elem, added_objects,True )
+        #obj_conversions = Merge(obj_conversions,init_conversion)
+        if init_conversion != None:
+            obj_conversions.update(init_conversion)
+        #ic (elem)
+        #ic (current_objects)
+        for obj in current_objects:
+            #file_write_str += str(obj) + "\n"
+            file_write_str += str(obj) + " - obj" + "\n"
+
+    #exit()
+    #ic (added_objects)
+    for goal_pred in goal:
+        if goal_pred == 'and':
+            continue
+        goal_pred = list(goal_pred)
+        #ic (goal_pred)
+        current_objects,goal_conversion = get_objects_from_predicate(goal_pred, added_objects,True)
+        if goal_conversion != None :
+            obj_conversions.update(goal_conversion)
+        for obj in current_objects:
+            #file_write_str += str(obj) + "\n"
+            file_write_str += str(obj) + " - obj" + "\n"
+    '''
+    if len(goal_pred) == 2:
+        if str(goal_pred[1]) not in added_objects:
+            file_write_str += str(goal_pred[1]) + "\n"
+            #f.write(str(goal_pred[1]) + "\n")
+            added_objects.append(str(goal_pred[1]))
+    elif len(goal_pred) == 3:
+        if str(goal_pred[1]) not in added_objects :
+            file_write_str += str(goal_pred[1]) + "\n"
+            #f.write(str(goal_pred[1])+"\n")
+            added_objects.append(str(goal_pred[1]))
+        if str(goal_pred[2]) not in added_objects :
+            file_write_str += str(goal_pred[2]) + "\n"
+            #f.write(str(goal_pred[2])+"\n")
+            added_objects.append(str(goal_pred[2]))
+    '''
+
+    #ic (added_objects)
+    #exit()
+    file_write_str += "\n)\n(:init\n"
+    #f.write("\n)")
+    #f.write("\n(:init\n")
+
+    for elem in init:
+        elem = list(elem)
+        '''
+        new_elem = [elem[0]]
+        for arg in elem[1:] :
+            if type(arg) == pddlstream.language.object.OptimisticObject:
+                #init_from_eval_curr[arg_idx + 1] = arg.pddl[1:]
+                #opt_obj_conversion[arg.pddl[1:]] = arg.pddl
+                new_elem.append(arg.pddl[1:])
+            else:
+                #init_from_eval_curr[arg_idx + 1] = arg.value
+                new_elem.append(arg.value)
+        #elem = elem.split(",")
+        elem = new_elem[:]
+        '''
+        #ic (elem)
+
+        cost_flag = 0
+        file_write_str_temp = ""
+        if len (elem) == 1 :
+            if "cost" in str(elem[0]) or "dist" in str(elem[0]):  # or "cost" in str(elem[2]):
+                    continue
+
+            write_str = "\n(" + str(elem[0])  + ")"
+            file_write_str += "\n(" + str(elem[0])  + ")"
+        else:
+            file_write_str_temp += "\n("
+            write_str = "\n("
+
+            for item in elem :
+                if "Cost" in str(item) or "cost" in str(item) \
+                        or "Dist" in str(item) or "dist" in str(item):
+                    cost_flag = 1
+                    break
+            current_objects,_ = get_objects_from_predicate(elem, [])
+
+            if "test-cfree-negative" in elem[0]:
+                file_write_str_temp += "not (cfree"  # + " "+ str(elem[1]) + ")"
+                write_str += "not (cfree"  # + " "+ str(elem[1]) + ")"
+            else :
+                file_write_str_temp += " " + str(elem[0])  # + " "+ str(elem[1]) + ")"
+                write_str += " " + str(elem[0])  # + " "+ str(elem[1]) + ")"
+            #ic (current_objects)
+            for item in current_objects:
+                file_write_str_temp += " " + item #+ " "+ str(elem[1]) + ")"
+                write_str += " " + item #+ " "+ str(elem[1]) + ")"
+            file_write_str_temp += ")"
+            write_str += ")"
+            if "test-cfree-negative" in elem[0]:
+                file_write_str_temp += ")"  # + " "+ str(elem[1]) + ")"
+                write_str += ")"  # + " "+ str(elem[1]) + ")"
+        if cost_flag == 0 :
+            file_write_str += file_write_str_temp
+            #f.write(write_str)
+
+    file_write_str += "\n)\n(:goal\n(and "
+    #f.write("\n)")
+    #f.write("\n(:goal\n")
+    #f.write("(and ")
+
+    #ic (goal)
+    for goal_pred in goal:
+        if goal_pred == 'and':
+            continue
+        goal_pred = list(goal_pred)
+        current_objects,_ = get_objects_from_predicate(goal_pred, [])
+        file_write_str += "\n" + "(" + str(goal_pred[0])
+        for item in current_objects:
+            file_write_str += " " + item  # + " "+ str(elem[1]) + ")"
+        file_write_str += ")"
+
+    '''
+    if len(goal) == 2:
+        #current_objects = get_objects_from_predicate(goal, [])
+        file_write_str += "\n" + "("+ str(goal[0]) + " " + str(goal[1]) +")"
+        write_str = "\n" + "("+ str(goal[0]) + " " + str(goal[1]) +")"
+    if len(goal) == 3:
+        file_write_str += "\n" + "(" +  str(goal[0]) + " " + str(goal[1]) + " "+ str(goal[2])+ ")"
+        write_str = "\n" + "(" +  str(goal[0]) + " " + str(goal[1]) + " "+ str(goal[2])+ ")"
+    #f.write(write_str)
+    '''
+
+    file_write_str += "\n)\n)\n)"
+    #ic (file_write_str)
+    #exit()
+    return file_write_str,obj_conversions
+
+def get_cont_information(elem,domain_name):
+    if domain_name.lower() == 'discrete_tamp_3d':
+        #a,b= discrete_tamp_3d_cont(elem)
+        #ic (elem,a,b)
+        #return a,b
+        return  discrete_tamp_3d_cont(elem)
+
+    if domain_name.lower() == 'discrete_tamp':
+        return discrete_tamp_cont(elem)
+
+    if domain_name.lower() == 'kuka':
+        return kuka_cont(elem)
+
+
+def kuka_cont(elem):
+    obj_start_str = [None] * 6
+    obj_start_str = np.array(obj_start_str)
+    obj_cont = [False] * obj_start_str.shape[0]
+    obj_cont = np.array(obj_cont)
+
+    pred = elem[0].lower()
+    '''
+    if pred == 'stackable':
+        obj_start_str[2] = 'r'
+    elif pred == 'sink':
+        obj_start_str[1] = 'r'
+    elif pred == 'stove':
+        obj_start_str[1] = 'r'
+    '''
+    if pred == 'pose':
+        obj_start_str[2] = 'p'
+    elif pred == 'grasp':
+        obj_start_str[2] = 'g'
+    elif pred == 'kin':
+        obj_start_str[2] = 'p'
+        obj_start_str[3] = 'g'
+        obj_start_str[4] = 'q'
+        obj_start_str[5] = 't'
+    elif pred == 'freemotion':
+        obj_start_str[1] = 'q'
+        obj_start_str[2] = 't'
+        obj_start_str[3] = 'q'
+    elif pred == 'holdingmotion':
+        obj_start_str[1] = 'q'
+        obj_start_str[2] = 't'
+        obj_start_str[3] = 'q'
+        obj_start_str[5] = 'g'
+    elif pred == 'supported':
+        obj_start_str[2] = 'p'
+        #obj_start_str[3] = 'r'
+    elif pred == 'traj' or pred == 'unsafetraj':
+        obj_start_str[1] = 't'
+    elif pred == 'trajcollision':
+        obj_start_str[1] = 't'
+        obj_start_str[3] = 'p'
+    elif pred == 'cfreeposepose':
+        obj_start_str[2] = 'p'
+        obj_start_str[4] = 'p'
+    elif pred == 'cfreeapproachpose':
+        obj_start_str[2] = 'p'
+        obj_start_str[3] = 'g'
+        obj_start_str[5] = 'p'
+    elif pred == 'cfreetrajpose':
+        obj_start_str[1] = 't'
+        obj_start_str[3] = 'p'
+    elif pred == "atpose":
+        obj_start_str[2] = 'p'
+    elif pred == 'atgrasp':
+        obj_start_str[2] = 'g'
+    elif pred == "conf" or pred == "atconf":
+        obj_start_str[1] = 'q'
+    #elif pred == 'on':
+    #    obj_start_str[2] = 'r'
+    elif pred == 'unsafepose':
+        obj_start_str[2] = 'p'
+    elif pred == 'unsafeapproach':
+        obj_start_str[2] = 'p'
+        obj_start_str[3] = 'g'
+    elif "distance" in elem[0]:
+        return [], None
+
+    obj_cont[np.where(obj_start_str!=None)] = True
+    #ic (obj_cont,obj_start_str)
+
+    return obj_start_str.tolist(),obj_cont.tolist()
+
+def discrete_tamp_cont(elem):
+    return discrete_tamp_3d_cont(elem)
+
+def discrete_tamp_3d_cont(elem):
+    obj_cont = [False] * 4
+    obj_start_str = [None] * 4
+
+    #if elem[0] == "Conf" or elem[0] == "AtConf":
+    if elem[0].lower() == "conf" or elem[0].lower() == "atconf":
+        #obj1_start_str = 'q'
+        #obj_1_cont = True
+        obj_start_str[1] = 'q'
+        obj_cont[1] = True
+    if elem[0].lower() == 'motion':
+        obj_start_str[1] = 'q'
+        obj_start_str[2] = 't'
+        obj_start_str[3] = 'q'
+        obj_cont[1] = True
+        obj_cont[2] = True
+        obj_cont[3] = True
+    #elif elem[0] == "Pose" or elem[0] == "Unsafe":
+    elif elem[0].lower() == "pose" or elem[0].lower() == "unsafe":
+        #obj1_start_str = 'p'
+        #obj_1_cont = True
+        obj_start_str[1] = 'p'
+        obj_cont[1] = True
+    #elif elem[0] == "AtPose":
+    elif elem[0].lower() == "traj":
+        obj_start_str[1] = 't'
+        obj_cont[1] = True
+    elif elem[0].lower() == "atpose":
+        #obj1_start_str = 'p'
+        #obj2_start_str = 'p'
+        #obj_2_cont = True
+        obj_start_str[2] = 'p'
+        obj_cont[2] = True
+    #elif elem[0] == "Kin":
+    elif elem[0].lower() == "kin":
+        #obj1_start_str = 'q'
+        #obj2_start_str = 'p'
+        #obj_1_cont = True
+        #obj_2_cont = True
+        obj_start_str[1] = 'q'
+        obj_start_str[2] = 'p'
+        obj_cont[1] = True
+        obj_cont[2] = True
+    #elif elem[0] == "Collision" or elem[0] == "CFree":
+    elif elem[0].lower() == "collision" or elem[0].lower() == "cfree":
+        #obj1_start_str = 'p'
+        #obj2_start_str = 'p'
+        #obj_1_cont = True
+        #obj_2_cont = True
+        obj_start_str[1] = 'p'
+        obj_start_str[2] = 'p'
+        obj_cont[1] = True
+        obj_cont[2] = True
+    elif "test-cfree-negative" in elem[0]:
+        #obj1_start_str = 'p'
+        #obj2_start_str = 'p'
+        #obj_1_cont = True
+        #obj_2_cont = True
+        obj_start_str[1] = 'p'
+        obj_start_str[2] = 'p'
+        obj_cont[1] = True
+        obj_cont[2] = True
+    elif "distance" in elem[0]:
+        return [],None
+
+    return obj_start_str,obj_cont
+
+
+def same_arg(stream_var,gym_var):
+    #ic (gym_var)
+    #ic (list(gym_var))
+    gym_var = gym_var.split(":")[0]
+
+    if type(stream_var) == np.ndarray:
+        gym_var = gym_var.split("_")
+        #ic (gym_var)
+        #ic (stream_var)
+        gym_var = np.array([int(elem) for elem in gym_var if type(elem) == str if elem.lstrip("-").isdigit()])
+        #ic (gym_var)
+        #ic (np.array_equal(gym_var, stream_var))
+        #return True
+        return (np.array_equal(gym_var, stream_var))
+
+    if type(stream_var) == str:
+        #ic (stream_var)
+        #ic (gym_var)
+        #ic (type(gym_var))
+        return stream_var == gym_var
+
+def action_in_groundings(action,groundings):
+    action_to_take = None
+
+    for grounding in groundings:
+        ic(grounding.__dict__)
+        found = True
+        if grounding.predicate == action.name:
+            for stream_var, gym_var in zip(action.args, grounding.variables):
+                # ic (variable)
+                ic (stream_var,gym_var)
+                if not same_arg(stream_var, gym_var):
+                    found = False
+                    break
+            if found == True:
+                action_to_take = grounding
+                break
+        if found == False:
+            break
+
+def is_action_possible(env,pddlstream_action,gym_state):
+    groundings = env.action_space.all_ground_literals(gym_state)
+    # ic (state)
+    groundings_list = []
+    #action_to_take = None
+    # ic (type(groundings))
+    for grounding in groundings:
+        grounding_action = grounding.predicate
+        objects = grounding.variables
+        groundings_list.append(pddlgym.structs.Literal(grounding_action, objects))
+
+    # ic (groundings_list)
+    action_to_take = action_in_groundings(pddlstream_action,groundings)
+    return action_to_take
+
+def pddlstream_from_pddlgym(state):
+
+    #ic (state.literals)
+    #ic (state.objects)
+    init = []
+    goal = []
+    #numerical_predicates = {"conf":[0],"AtConf":[0], }
+    '''
+    assert(1 <= n_blocks <= n_poses)
+    blocks = [BLOCK_TEMPLATE.format(i) for i in range(n_blocks)]
+    poses = [np.array([x, 0]) for x in range(n_poses)]
+
+    block_poses = dict(zip(blocks, poses))
+    initial = DiscreteTAMPState(INITIAL_CONF, None, block_poses)
+    goal_poses = {blocks[0]: poses[1]}
+    '''
+
+    for predicate in state.literals :
+        #ic (predicate.__dict__)
+        to_add = pddlgym_predicate_to_pddlstream_predicate(predicate)
+        if to_add != None:
+            init.append(to_add)
+
+    #ic (init)
+
+    #ic (state.goal)
+    #ic (state.goal.__dict__)
+    for predicate in state.goal.literals:
+        to_add = pddlgym_predicate_to_pddlstream_predicate(predicate)
+        if to_add != None:
+            goal.append(to_add)
+
+    if len(goal) == 1:
+        pddlstream_goal = goal[0]
+    else:
+        pddlstream_goal = ('and',) + tuple(goal)
+    #pddl_stream_goal = And(*[elem for elem in goal])
+    #ic (init)
+    #ic (init[2])
+    #ic (init[2][1])
+    #ic (type(init[2][1]))
+    #exit()
+    #init.append(Equal((TOTAL_COST,), 0))
+    ic (init)
+    ic (pddlstream_goal)
+    #exit()
+    return init,pddlstream_goal
+
+def pddlgym_predicate_to_pddlstream_predicate(predicate):
+    numerical_positions = {"conf":[0],"atconf":[0],"pose":[0],"atpose":[1],"block":[],"unsafe":[0],"cfree":[0,1],"kin":[0,1],"Notcfree":[0,1]}
+    non_numerical_positions = {"conf":[],"atconf":[],"pose":[],"atpose":[0],"block":[0],"unsafe":[],"cfree":[],"kin":[],"Notcfree":[]}
+    pddlgym_to_pddlstream_predicate = {"conf":"Conf", "atconf":"AtConf","pose":"Pose","atpose":"AtPose",
+                                       "block":"Block","unsafe":"Unsafe","canmove":"CanMove",
+                                       "handempty":"HandEmpty","cfree":"CFree","kin":"Kin","Notcfree": "Not Cfree"}
+
+    #ic (predicate.__dict__)
+    #ic (pddlgym_to_pddlstream_predicate['cfree'])
+    #ic ()
+
+    derived_predicates = ["unsafe"]
+    added_cont_values = []
+    if predicate.predicate in derived_predicates:
+        return None
+    if len(predicate.variables) == 0:
+        # init.append((str(predicate.predicate).capitalize(),))
+        return (pddlgym_to_pddlstream_predicate[str(predicate.predicate)],)
+    else:
+        pddlstream_predicate = [None] * (len(predicate.variables) + 1)
+        pddlstream_predicate[0] = pddlgym_to_pddlstream_predicate[predicate.predicate]
+
+        #ic (predicate.predicate)
+        for position in numerical_positions[str(predicate.predicate)]:
+            values = predicate.variables[position].split("_")
+            #ic (values)
+            int_values = [int(elem) if elem.isnumeric() else elem for elem in values[1:]]
+
+
+            existing_index = [idx for idx, el in enumerate(added_cont_values) if np.array_equal(el, int_values)]
+            # if int_values not in added_cont_values :
+            if len(existing_index) == 0:
+                added_cont_values.append(int_values)
+            else:
+                int_values = added_cont_values[existing_index[0]]
+
+            #ic (int_values)
+            #ic ([True if type(elem) == int else False for elem in int_values])
+            if all([True if type(elem) == int else False for elem in int_values]) :
+                pddlstream_predicate[position + 1] = np.array(int_values)
+            else:
+                pddlstream_predicate[position + 1] = str(predicate.variables[position].split(":")[0])
+
+
+        for position in non_numerical_positions[str(predicate.predicate)]:
+            # pddlstream_predicate.append(str(predicate.variables[position].split(":")[0]))
+            pddlstream_predicate[position + 1] = str(predicate.variables[position].split(":")[0])
+        return tuple(pddlstream_predicate)
+
+def pddlgym_plan_to_pddlstream_plan(pddlgym_plan,renamed_plan,opt_evaluations,mapping=None):
+    pddlstream_plan = []
+    a = Action('abc',[1,2,3])
+    '''
+    ic (opt_evaluations)
+    for eval in opt_evaluations:
+        ic (eval)
+        ic (eval.head)
+        ic(eval.head.args)
+    #ic (a)
+    #ic (type(a))
+    '''
+
+    for action in renamed_plan:
+        ic (action)
+        ic (type(action))
+        #ic (action.__dict__)
+
+    for action in pddlgym_plan:
+        ic (action)
+        #ic (action.__dict__)
+        args = action.variables[:]
+        pddlstream_action = Action(str(action.predicate),args)
+        pddlstream_plan.append(pddlstream_action)
+    '''
+    ic (renamed_plan)
+    ic (pddlstream_plan)
+    exit()
+    '''
+
+    return pddlstream_plan
+
 
 ##################################################
 

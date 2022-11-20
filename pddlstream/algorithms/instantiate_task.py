@@ -11,6 +11,7 @@ from pddlstream.algorithms.relation import Relation, compute_order, solve_satisf
 from pddlstream.language.constants import is_parameter
 from pddlstream.utils import flatten, apply_mapping, MockSet, elapsed_time, Verbose, safe_remove, ensure_dir, \
     str_from_object, user_input
+from icecream import ic
 
 import pddl
 import instantiate
@@ -174,17 +175,24 @@ def instantiate_task(task, check_infeasible=True, use_fd=FD_INSTANTIATE, **kwarg
     start_time = time()
     print()
     normalize.normalize(task)
+    #ic (task.__dict__)
     if use_fd:
+        #ic ("in FD")
         relaxed_reachable, atoms, actions, axioms, reachable_action_params = instantiate.explore(task)
     else:
         relaxed_reachable, atoms, actions, axioms = instantiate_domain(task, **kwargs)
         reachable_action_params = get_reachable_action_params(actions)
+    #ic (relaxed_reachable)
     #for atom in sorted(filter(lambda a: isinstance(a, pddl.Literal), set(task.init) | set(atoms)),
     #                   key=lambda a: a.predicate):
     #    print(fact_from_fd(atom))
     #print(axioms)
     #for i, action in enumerate(sorted(actions, key=lambda a: a.name)):
     #    print(i, transform_action_args(pddl_from_instance(action), obj_from_pddl))
+    #ic ("** in instantiate task ", relaxed_reachable)
+    #ic ("In instantiate task")
+    #ic (axioms)
+
     print('Infeasible:', not relaxed_reachable)
     print('Instantiation time: {:.3f}s'.format(elapsed_time(start_time)))
     if check_infeasible and not relaxed_reachable:
@@ -210,6 +218,7 @@ def sas_from_instantiated(instantiated_task):
     if not instantiated_task:
         return unsolvable_sas_task("No relaxed solution")
     task, atoms, actions, axioms, reachable_action_params, goal_list = instantiated_task
+    #ic (axioms)
 
     # TODO: option to skip and just use binary variables
     with timers.timing("Computing fact groups", block=True):

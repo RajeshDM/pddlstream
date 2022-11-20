@@ -12,6 +12,7 @@ from pddlstream.language.conversion import is_atom, is_negated_atom, objects_fro
     pddl_list_from_expression, obj_from_pddl
 from pddlstream.utils import read, write, INF, clear_dir, get_file_path, MockSet, find_unique, int_ceil, safe_remove, safe_zip
 from pddlstream.language.write_pddl import get_problem_pddl
+from icecream import ic
 
 USE_CERBERUS = False
 #CERBERUS_PATH = '/home/caelan/Programs/cerberus' # Check if this path exists
@@ -286,15 +287,30 @@ def parse_goal(goal_exp, domain):
 
 def get_problem(evaluations, goal_exp, domain, unit_costs=False):
     objects = objects_from_evaluations(evaluations)
+    #ic (objects)
     typed_objects = list({make_object(pddl_from_object(obj)) for obj in objects} - set(domain.constants))
+    #ic (objects)
+    #ic (typed_objects)
+
+    #for obj in typed_objects:
+    #    ic (obj.__dict__)
+    #ic (typed_objects)
+    #exit()
     # TODO: this doesn't include =
     init = fd_from_evaluations(evaluations)
+    #ic (init)
+
+    #for evaluation in evaluations:
+    #    if len(evaluation.head.args) != 0:
+    #        ic (evaluation.head.args[0].__dict__)
+
     goal = pddl.Truth() if goal_exp is None else parse_goal(goal_exp, domain)
     #print('{} objects and {} atoms'.format(len(objects), len(init)))
     problem_pddl = None
     if USE_FORBID:
         problem_pddl = get_problem_pddl(evaluations, goal_exp, domain.pddl, temporal=False)
     write_pddl(domain.pddl, problem_pddl)
+    #ic (sorted(typed_objects, key=lambda o: o.name))
     return Problem(task_name=domain.name, task_domain_name=domain.name,
                    objects=sorted(typed_objects, key=lambda o: o.name),
                    task_requirements=pddl.tasks.Requirements([]), init=init, goal=goal,
@@ -405,6 +421,7 @@ def run_search(temp_dir, planner=DEFAULT_PLANNER, max_planner_time=DEFAULT_MAX_T
         planner_config = SEARCH_OPTIONS[planner] % (max_time, max_cost)
     command = search.format(temp_dir + SEARCH_OUTPUT, planner_config, temp_dir + TRANSLATE_OUTPUT)
 
+    #ic (planner_config)
     temp_path = os.path.join(os.getcwd(), TEMP_DIR)
     domain_path = os.path.abspath(os.path.join(temp_dir, DOMAIN_INPUT))
     problem_path = os.path.abspath(os.path.join(temp_dir, PROBLEM_INPUT))
@@ -413,6 +430,21 @@ def run_search(temp_dir, planner=DEFAULT_PLANNER, max_planner_time=DEFAULT_MAX_T
     if debug:
         print('Search command:', command)
 
+    #new_command = '/Users/rajesh/Rajesh/Subjects/Research/affordance_learning/full_repos/6_pddl_stream/pddlstream/pddlstream/algorithms/../../FastDownward/builds/release64/bin/downward /Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl /Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp_test/problem_2022_10_15-02_03_56_218738_PM.pddl --search "astar(ipdb())"'
+    #new_command = '/Users/rajesh/Rajesh/Subjects/Research/affordance_learning/full_repos/6_pddl_stream/pddlstream/pddlstream/algorithms/../../FastDownward/builds/release64/bin/downward --internal-plan-file temp/sas_plan --evaluator "h=ff(transform=adapt_costs(cost_type=PLUSONE))" --search "astar(ipdb())" < temp/output.sas'
+    #new_command = '/Users/rajesh/Rajesh/Subjects/Research/affordance_learning/full_repos/6_pddl_stream/pddlstream/pddlstream/algorithms/../../FastDownward/builds/release64/bin/downward --internal-plan-file temp/sas_plan --evaluator "h=ff(transform=adapt_costs(cost_type=PLUSONE))" --search "astar(ipdb())" < temp/output.sas'
+    heuristic = 'add'
+    heuristic = 'ff'
+    loc = '/Users/rajesh/Rajesh/Subjects/Research/affordance_learning/full_repos/6_pddl_stream/pddlstream/pddlstream/algorithms/../../FastDownward/builds/release64/bin/downward --internal-plan-file temp/sas_plan '
+    evaluator = f'--evaluator "h={heuristic}(transform=adapt_costs(cost_type=PLUSONE))" '
+    search = '--search "eager(alt([single(sum([g(), weight(h,2)])),single(sum([g(),weight(h,2)]),pref_only=true)]),preferred=[h],cost_type=PLUSONE,max_time=30,bound=infinity)" '
+    output_info = '< temp/output.sas'
+    new_command = loc + evaluator + search + output_info
+
+    #ic (command)
+    #ic (new_command)
+
+    #exit()
     # os.popen is deprecated
     # run, call, check_call, check_output
     #with subprocess.Popen(command.split(), stdout=subprocess.PIPE, shell=True, cwd=None) as proc:
@@ -427,8 +459,14 @@ def run_search(temp_dir, planner=DEFAULT_PLANNER, max_planner_time=DEFAULT_MAX_T
         if filename.startswith(SEARCH_OUTPUT):
             safe_remove(os.path.join(temp_path, filename))
 
+    #ic (command)
+    #exit()
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, cwd=None, close_fds=True)
+    #output, error = proc.communicate()
+    #ic (output)
+    #proc = subprocess.Popen(new_command, stdout=subprocess.PIPE, shell=True, cwd=None, close_fds=True)
     output, error = proc.communicate()
+    #ic (output)
 
     if USE_FORBID:
         for filename in os.listdir(FORBID_PATH):
@@ -439,7 +477,11 @@ def run_search(temp_dir, planner=DEFAULT_PLANNER, max_planner_time=DEFAULT_MAX_T
         print(output.decode(encoding='UTF-8')[:-1])
         print('Search runtime:', time() - start_time)
     plan_files = sorted(f for f in os.listdir(temp_path) if f.startswith(SEARCH_OUTPUT))
-    print('Plans:', plan_files)
+    #plan_files_2 = sorted(f for f in os.listdir(temp_path) if f.startswith(SEARCH_OUTPUT))
+    #print('Plans:', plan_files)
+    #ic (parse_solutions(temp_path),plan_files_2)
+    #ic (parse_solutions(temp_path,plan_files))
+    #exit()
     return parse_solutions(temp_path, plan_files)
 
 ##################################################
@@ -467,9 +509,11 @@ def parse_solution(solution):
 def parse_solutions(temp_path, plan_files):
     # TODO: return multiple solutions for focused
     best_plan, best_cost = None, INF
+    #ic  (plan_files)
     for plan_file in plan_files:
         solution = read(os.path.join(temp_path, plan_file))
         plan, cost = parse_solution(solution)
+        #ic (plan,cost)
         if cost < best_cost:
             best_plan, best_cost = plan, cost
     return best_plan, best_cost
@@ -491,12 +535,17 @@ def literal_holds(state, literal):
     return (literal.positive() in state) != literal.negated
 
 def conditions_hold(state, conditions):
+    #ic (conditions)
     return all(literal_holds(state, cond) for cond in conditions)
 
 def get_precondition(operator):
     if isinstance(operator, pddl.Action) or isinstance(operator, pddl.PropositionalAction):
+        #ic (operator.precondition)
+        #ic (operator)
         return operator.precondition
     elif isinstance(operator, pddl.Axiom) or isinstance(operator, pddl.PropositionalAxiom):
+        #ic (operator.condition)
+        #ic (operator)
         return operator.condition
     raise ValueError(operator)
 
@@ -518,6 +567,8 @@ def is_applicable(state, action):
 def apply_action(state, action):
     assert(isinstance(action, pddl.PropositionalAction))
     # TODO: signed literals
+    #ic (action.del_effects)
+    #ic (action.add_effects)
     for conditions, effect in action.del_effects:
         if conditions_hold(state, conditions):
             state.discard(effect)
@@ -532,6 +583,19 @@ def apply_axiom(state, axiom):
 def is_valid_plan(initial_state, plan): #, goal):
     state = set(initial_state)
     for action in plan:
+        #ic ("New State ")
+        #ic (list(state))
+        '''
+        for predicate in list (state):
+            if bool(predicate.__dict__):
+                ic (predicate.__dict__)
+                #ic (predicate.expression.__dict__)
+                #ic (predicate.fluent.__dict__)
+            else :
+                ic (predicate)
+        '''
+        #print (state)
+        #for predicate in liststate :
         if not is_applicable(state, action):
             return False
         apply_action(state, action)

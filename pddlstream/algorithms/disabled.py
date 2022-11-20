@@ -7,6 +7,7 @@ from pddlstream.language.function import FunctionResult
 from pddlstream.language.stream import StreamResult
 from pddlstream.language.conversion import is_plan, transform_action_args, replace_expression
 from pddlstream.utils import INF, safe_zip, apply_mapping, flatten, elapsed_time
+from icecream import ic
 
 # TODO: disabled isn't quite like complexity. Stream instances below the complexity threshold might be called again
 # Well actually, if this was true wouldn't it have already been sampled on a lower level?
@@ -92,6 +93,11 @@ def process_stream_plan(store, domain, disabled, stream_plan, action_plan, cost,
     for idx, opt_result in enumerate(stream_plan):
         if (store.best_cost <= cost) or (max_failures < (idx - len(bound_plan))):
             # TODO: this terminates early when bind=False
+            #ic (store.best_cost)
+            #ic (cost)
+            #ic (max_failures)
+            #ic (idx)
+            #ic (len(bound_plan))
             break
         opt_inputs = [inp for inp in opt_result.instance.input_objects if inp in free_objects]
         if (not bind and opt_inputs) or not all(inp in bindings for inp in opt_inputs):
@@ -114,6 +120,48 @@ def process_stream_plan(store, domain, disabled, stream_plan, action_plan, cost,
     if (num_wild == 0) and (len(stream_plan) == len(bound_plan)):
         store.add_plan(bind_action_plan(action_plan, bindings), cost)
     # TODO: report back whether to try w/o optimistic values in the event that wild
+
+
+def process_stream_plan_partial(store, domain, disabled, stream_plan, action_plan, cost,
+                        bind=True, max_failures=0):
+    # Bad old implementation of this method
+    # The only advantage of this vs skeleton is that this can avoid the combinatorial growth in bindings
+    stream_plan = [result for result in stream_plan if result.optimistic]
+    free_objects = get_free_objects(stream_plan)
+    bindings = {}
+    bound_plan = []
+    num_wild = 0
+    for idx, opt_result in enumerate(stream_plan):
+        ic (opt_result)
+        opt_inputs = [inp for inp in opt_result.instance.input_objects if inp in free_objects]
+        if (not bind and opt_inputs) or not all(inp in bindings for inp in opt_inputs):
+            continue
+        bound_result = opt_result.remap_inputs(bindings)
+        bound_instance = bound_result.instance
+        if bound_instance.enumerated or not is_instance_ready(store.evaluations, bound_instance):
+            continue
+        # TODO: could remove disabled and just use complexity_limit
+        new_results, new_facts = process_instance(store, domain, bound_instance) # TODO: bound_result
+        num_wild += len(new_facts)
+        if not bound_instance.enumerated:
+            disabled.add(bound_instance)
+        for new_result in new_results:
+            if new_result.is_successful():
+                bound_plan.append(new_results[0])
+                bindings = update_bindings(bindings, bound_result, bound_plan[-1])
+                cost = update_cost(cost, opt_result, bound_plan[-1])
+                break
+    if (num_wild == 0) and (len(stream_plan) == len(bound_plan)):
+        store.add_plan(bind_action_plan(action_plan, bindings), cost)
+    # TODO: report back whether to try w/o optimistic values in the event that wild
+
+##################################################
+
+# def process_stream_plan_branch(store, domain, disabled, stream_plan, action_plan, cost):
+#     if not is_plan(stream_plan):
+#         return
+
+
 
 ##################################################
 

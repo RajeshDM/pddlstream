@@ -14,6 +14,7 @@ from pddlstream.language.optimizer import parse_optimizer
 from pddlstream.language.rule import parse_rule, apply_rules_to_streams, RULES
 from pddlstream.language.stream import parse_stream, Stream, StreamInstance
 from pddlstream.utils import INF
+from icecream import ic
 
 
 # TODO: rename file to parsing
@@ -93,6 +94,22 @@ def parse_problem(problem, stream_info={}, constraints=None, unit_costs=False, u
     check_problem(domain, streams, obj_from_constant)
 
     evaluations = evaluations_from_init(init)
+
+
+    #exit()
+    '''
+    for evaluation in evaluations:
+        ic (evaluation.head.args)
+        if len(evaluation.head.args) >0:
+            ic (type(evaluation.head.args[0]))
+            ic (evaluation.head.args[0].__dict__)
+
+    ic (evaluations)
+    ic (init)
+    #for evaluation in evaluations:
+    '''
+
+
     goal_exp = obj_from_value_expression(goal)
 
     if isinstance(domain, SimplifiedDomain):

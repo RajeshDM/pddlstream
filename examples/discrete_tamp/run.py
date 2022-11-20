@@ -12,7 +12,8 @@ from examples.discrete_tamp.viewer import DiscreteTAMPViewer, COLORS
 # from pddlstream.algorithms.serialized import solve_serialized
 from pddlstream.language.constants import And, Equal, TOTAL_COST, print_solution, PDDLProblem
 from pddlstream.language.generator import from_gen_fn, from_fn, from_test
-from pddlstream.utils import user_input, read, INF
+from pddlstream.utils import user_input, read, INF,pddlstream_from_pddlgym,is_action_possible
+from icecream import ic
 
 
 # TODO: Can infer domain from usage or from specification
@@ -112,10 +113,60 @@ def apply_plan(tamp_problem, plan):
 
 ##################################################
 
+def collect_pddlgym_data(state,env):
+    pddlstream_init, goal = pddlstream_from_pddlgym(state)
+    constant_map = None
+    poses = [elem[1] for elem in pddlstream_init if elem[0] == "Pose"]
+    poses_2 = [elem[1] for elem in goal if elem[0] == "Pose"]
+    poses = poses + poses_2
+    ic(poses)
+    stream_map = {
+        # 'sample-pose': from_gen_fn(lambda: ((np.array([x, 0]),) for x in range(len(poses), n_poses))),
+        'sample-pose': from_gen_fn(lambda: ((p,) for p in poses)),
+        'inverse-kinematics': from_fn(lambda p: (p + GRASP,)),
+        'test-cfree': from_test(lambda *args: not collision_test(*args)),
+        # 'test-cfree': from_test(lambda *args: collision_test(*args)),
+        'collision': collision_test,
+        'distance': distance_fn,
+    }
+    #directory = os.path.dirname(
+    #    '/Users/rajesh/Rajesh/Subjects/Research/affordance_learning/full_repos/6_pddl_stream/pddlstream/examples/discrete_tamp_gnn/')
+    directory = os.path.dirname(os.path.abspath(__file__))
+    domain_pddl = read(os.path.join(directory, 'domain.pddl'))
+    stream_pddl = read(os.path.join(directory, 'stream.pddl'))
+    ic(pddlstream_init)
+    ic(goal)
+    # exit()
+    pddlstream_problem = PDDLProblem(domain_pddl, constant_map, stream_pddl, stream_map, pddlstream_init, goal)
+    # pddlstream_problem = get_pddlstream_problem(init) #PDDLProblem(domain_pddl, constant_map, stream_pddl, stream_map, init, goal)
+    solution = solve(pddlstream_problem, algorithm='adaptive', unit_costs=False, debug=False)
+    '''
+    solution = solve_adaptive(
+        pddlstream_problem, constraints=PlanConstraints(),
+        stream_info={}, replan_actions=set(),
+        unit_costs=False, success_cost=INF,
+        max_time=INF, max_iterations=INF, max_memory=INF,
+        initial_complexity=0, complexity_step=1,
+        max_complexity=INF,
+        max_skeletons=INF, search_sample_ratio=1,
+        # bind=bind, max_failures=max_failures,
+        unit_efforts=False, max_effort=INF, effort_weight=None, reorder=True,
+        visualize=False, verbose=True)
+    '''
+
+    plan, cost, evaluations = solution
+    pddlgym_plan = []
+    for pddlstream_action in plan:
+        # action_to_take =
+        action_to_take = is_action_possible(env, pddlstream_action, state)
+        pddlgym_plan.append(action_to_take)
+
 def main():
     parser = create_parser()
     #parser.add_argument('-p', '--problem', default='blocked', help='The name of the problem to solve')
     args = parser.parse_args()
+    #args.algorithm = 'adaptive'
+    #args.algorithm = 'focused'
     print('Arguments:', args)
 
     problem_fn = get_shift_one_problem  # get_shift_one_problem | get_shift_all_problem # TODO: use --problem
@@ -130,6 +181,8 @@ def main():
 
     print_solution(solution)
     plan, cost, evaluations = solution
+    ic ("back in main")
+    exit()
     if plan is None:
         return
     apply_plan(tamp_problem, plan)

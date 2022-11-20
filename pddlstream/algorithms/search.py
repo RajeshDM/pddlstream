@@ -6,6 +6,7 @@ from time import time
 from pddlstream.algorithms.downward import run_search, TEMP_DIR, write_pddl
 from pddlstream.algorithms.instantiate_task import write_sas_task, translate_and_write_pddl
 from pddlstream.utils import INF, Verbose, safe_rm_dir
+from icecream import ic
 
 
 # TODO: manual_patterns
@@ -23,6 +24,15 @@ def solve_from_task(sas_task, temp_dir=TEMP_DIR, clean=False, debug=False, hiera
     with Verbose(debug):
         print('\n' + 50*'-' + '\n')
         write_sas_task(sas_task, temp_dir)
+        '''
+        #ic (sas_task)
+        ic (sas_task.__dict__)
+        ic (sas_task.init.__dict__)
+        ic (sas_task.goal.__dict__)
+        ic (sas_task.operators[0].__dict__)
+        ic (sas_task.variables.__dict__)
+        ic (sas_task.mutexes[0].__dict__)
+        '''
         solution = run_search(temp_dir, debug=True, **search_args)
         if clean:
             safe_rm_dir(temp_dir)

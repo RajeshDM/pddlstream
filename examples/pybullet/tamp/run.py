@@ -153,8 +153,8 @@ def main(verbose=True):
         raise ValueError(args.problem)
     problem_fn = problem_fn_from_name[args.problem]
 
-    connect(use_gui=args.viewer)
-    #connect(True)
+    #connect(use_gui=args.viewer)
+    connect(True)
     with HideOutput():
         problem = problem_fn(num=args.number)
     draw_base_limits(problem.base_limits, color=(1, 0, 0))

@@ -161,7 +161,8 @@
   (:derived (UnsafeBMove ?t)
     (exists (?o2 ?p2) (and (not (CFreeTrajPose ?t ?o2 ?p2))
                            ;(not (CFreeTrajPose ?t ?o2 ?p2))
-                           (AtPose ?o2 ?p2) (Pickable ?o2)))
+                           (AtPose ?o2 ?p2)
+                           (Pickable ?o2)))
   )
 
    (:derived (Unsafe ?p)

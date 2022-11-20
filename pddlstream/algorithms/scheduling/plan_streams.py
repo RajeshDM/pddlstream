@@ -6,7 +6,7 @@ from collections import defaultdict, namedtuple
 
 from pddlstream.algorithms.downward import get_problem, task_from_domain_problem, get_cost_scale, \
     conditions_hold, apply_action, scale_cost, fd_from_fact, make_domain, make_predicate, evaluation_from_fd, \
-    plan_preimage, fact_from_fd, USE_FORBID, pddl_from_instance, parse_action
+    plan_preimage, fact_from_fd, USE_FORBID, pddl_from_instance, parse_action,is_valid_plan
 from pddlstream.algorithms.instantiate_task import instantiate_task, sas_from_instantiated, FD_INSTANTIATE
 from pddlstream.algorithms.scheduling.add_optimizers import add_optimizer_effects, \
     using_optimizers, recover_simultaneous
@@ -34,8 +34,19 @@ from pddlstream.language.statistics import compute_plan_effort
 from pddlstream.language.temporal import SimplifiedDomain, solve_tfd
 from pddlstream.language.write_pddl import get_problem_pddl
 from pddlstream.language.object import Object
+from pddlstream.language.write_pddl import get_problem_pddl
 from pddlstream.utils import Verbose, INF, topological_sort, get_ancestors
+import pddlstream
 from icecream import ic
+from pddlstream.utils import generate_pddl_from_init_goal,get_init_from_evals,update_init_from_negative, \
+    add_negative_to_init,get_init_from_opt_evals,pddlgym_plan_to_pddlstream_plan
+import numpy as np
+from datetime import datetime
+import time
+import pddlgym
+import pickle
+from PLOI.main import  _create_planner,_create_guider,IncrementalPlanner,discrepancy_search
+from PLOI.planning import validate_strips_plan
 
 RENAME_ACTIONS = False
 #RENAME_ACTIONS = not USE_FORBID
@@ -106,6 +117,8 @@ def instantiate_optimizer_axioms(instantiated, domain, results):
         new_instantiated = instantiate_task(task_from_domain_problem(temp_domain, temp_problem),
                                             use_fd=use_fd, check_infeasible=False, prune_static=False)
         assert new_instantiated is not None
+    ic (new_instantiated.axioms)
+    ic (new_instantiated.atoms)
     instantiated.axioms.extend(new_instantiated.axioms)
     instantiated.atoms.update(new_instantiated.atoms)
 
@@ -136,11 +149,15 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
     real_states, full_plan = recover_negative_axioms(
         real_task, opt_task, axiom_plans, action_plan, negative_from_name)
     function_plan = compute_function_plan(opt_evaluations, action_plan)
+    #ic (function_plan)
 
     full_preimage = plan_preimage(full_plan, []) # Does not contain the stream preimage!
     negative_preimage = set(filter(lambda a: a.predicate in negative_from_name, full_preimage))
     negative_plan = convert_negative(negative_preimage, negative_from_name, full_preimage, real_states)
     function_plan.update(negative_plan)
+    #ic (full_preimage)
+    #ic (negative_plan)
+    #ic(function_plan)
     # TODO: OrderedDict for these plans
 
     # TODO: this assumes that actions do not negate preimage goals
@@ -157,6 +174,7 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
     # TODO: get_steps_from_stream
     stream_plan = []
     last_from_stream = dict(function_plan)
+    #ic (current_plan)
     for result in current_plan: # + negative_plan?
         # TODO: actually compute when these are needed + dependencies
         last_from_stream[result] = 0
@@ -167,7 +185,9 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
             function_plan[result] = replan_step
         else:
             stream_plan.append(result)
+    #ic (function_plan)
 
+    #ic (stream_plan)
     curr_evaluations = evaluations_from_stream_plan(evaluations, stream_plan, max_effort=None)
     extraction_facts = set(last_from_fact) - set(map(fact_from_evaluation, curr_evaluations))
     extract_stream_plan(node_from_atom, extraction_facts, stream_plan)
@@ -176,6 +196,11 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
     stream_plan = postprocess_stream_plan(evaluations, domain, stream_plan, last_from_fact)
     node_from_atom = get_achieving_streams(evaluations, stream_plan, max_effort=None)
     fact_sequence = [set(result.get_domain()) for result in stream_plan] + [extraction_facts]
+    #ic (stream_plan)
+    #ic (node_from_atom)
+    #ic (curr_evaluations)
+    #ic (extraction_facts)
+    #ic (function_plan)
     for facts in reversed(fact_sequence): # Bellman ford
         for fact in facts: # could flatten instead
             result = node_from_atom[fact].result
@@ -185,8 +210,12 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
             last_from_stream[result] = min(step, last_from_stream.get(result, INF))
             for domain_fact in result.instance.get_domain():
                 last_from_fact[domain_fact] = min(last_from_stream[result], last_from_fact.get(domain_fact, INF))
+    #ic (stream_plan)
+    #ic ("before extend")
     stream_plan.extend(function_plan)
 
+    #ic (stream_plan)
+    #ic ("in processing")
     partial_orders = recover_partial_orders(stream_plan, node_from_atom)
     bound_objects = set()
     for result in stream_plan:
@@ -244,6 +273,7 @@ def recover_stream_plan(evaluations, current_plan, opt_evaluations, goal_express
             results_from_step[future_step].append(result)
 
     # TODO: some sort of obj side-effect bug that requires obj_from_pddl to be applied last (likely due to fluent streams)
+
     eager_plan = convert_fluent_streams(eager_plan, real_states, action_plan, steps_from_fact, node_from_atom)
     combined_plan = []
     for step, action in enumerate(action_plan):
@@ -299,12 +329,189 @@ def solve_optimistic_sequential(domain, stream_domain, applied_results, all_resu
                                 opt_evaluations, node_from_atom, goal_expression,
                                 effort_weight, debug=False, **kwargs):
     #print(sorted(map(fact_from_evaluation, opt_evaluations)))
+    start_time = time.time()
+    temporal_plan = None
+    #ic (all_results)
+    #ic (applied_results)
+    problem = get_problem(opt_evaluations, goal_expression, stream_domain)  # begin_metric
+    #ic (problem)
+    #ic (domain)
+    #ic (domain.type)
+    pddl_prob = get_problem_pddl(opt_evaluations, goal_expression, domain.pddl, temporal=False)
+    #ic (pddl_prob)
+    #exit()
+
+    #ic (stream_domain)
+    #ic (opt_evaluations)
+    #ic (goal_expression)
+
+    with Verbose(verbose=debug):
+        task = task_from_domain_problem(stream_domain, problem)
+        #ic(task.__dict__)
+        #if task != None :
+        #    ic (task.axioms)
+        #    ic (task.axioms[0].__dict__)
+        instantiated = instantiate_task(task)
+        #if instantiated != None :
+        #    ic (instantiated.axioms)
+    #ic(task.objects)
+    obj_pddl_from_args = {}
+    #ic (obj_pddl_from_args)
+
+    #if instantiated != None :
+    #    ic (instantiated.axioms)
+    #for axiom in task.axioms:
+    #    ic (axiom.__dict__)
+    if instantiated is None:
+        #print (" ** returning none due to instantiation benig none ** ")
+        return instantiated, None, temporal_plan, INF
+
+    cost_from_action = {action: action.cost for action in instantiated.actions}
+    add_stream_efforts(node_from_atom, instantiated, effort_weight)
+    #ic (instantiated.axioms)
+    if using_optimizers(applied_results):
+        add_optimizer_effects(instantiated, node_from_atom)
+        # TODO: reachieve=False when using optimizers or should add applied facts
+        instantiate_optimizer_axioms(instantiated, domain, all_results)
+    #for axiom in task.axioms:
+    #    ic (axiom.__dict__)
+    #for task_function in task.functions:
+    #    ic (task_function.__dict__)
+    #ic (instantiated.axioms)
+    action_from_name = rename_instantiated_actions(instantiated, RENAME_ACTIONS)
+    # TODO: the action unsatisfiable conditions are pruned
+    #ic (instantiated.axioms)
+    #ic (instantiated.atoms)
+    with Verbose(debug):
+        sas_task = sas_from_instantiated(instantiated)
+        #sas_task.metric = task.use_min_cost_metric
+        sas_task.metric = True
+
+    #ic (instantiated)
+    # TODO: apply renaming to hierarchy as well
+    # solve_from_task | serialized_solve_from_task | abstrips_solve_from_task | abstrips_solve_from_task_sequential
+    #ic (task.__dict__)
+    renamed_plan, _ = solve_from_task(sas_task, debug=debug, **kwargs)
+    end_time = time.time()
+    #ic (" * ** ** * * * * renamed plan ** **** ** " )
+    init = []
+    #ic (task.__dict__.items())
+    obj_conversions_pddlstream = {}
+    for object in task.objects:
+        #ic (obj_from_pddl(object.name))
+        obj_conversions_pddlstream[obj_from_pddl(object.name)] = object.name
+    #ic (task.goal)
+    #ic (obj_conversions_pddlstream)
+
+    goal = str(task.goal)
+    goal = goal[goal.find("Atom")+4:]
+    goal_predicate = goal[1:goal.find("(")]
+    goal_objects = goal[goal.find("(")+1:goal.find(")")]
+    goal_objects = goal_objects.replace(" ","")
+    goal_objects = goal_objects.split(",")
+    if len(goal_objects) != 0:
+        if goal_objects[0] != '':
+            goal = (tuple([goal_predicate]+goal_objects))
+        else:
+            goal = (goal_predicate,)
+    else:
+        goal = (goal_predicate,)
+
+    #ic (goal)
+    '''
+    ic (sas_task.init.__dict__)
+    '''
+    #ic (instantiated)
+    #ic (instantiated)
+    #ic (instantiated.task.atoms)
+    #ic (sas_task.__dict__)
+    '''
+    for elem in sas_task.axioms:
+        ic (elem)
+        ic (elem.__dict__)
+        #ic (elem.expression.__dict__)
+        #ic (elem.fluent.__dict__)
+    for elem in sas_task.operators:
+        ic (elem)
+        ic (elem.__dict__)
+    for elem in task.init:
+        ic (elem)
+        if hasattr(elem,'pddl'):
+            ic (elem.pddl)
+        if bool (elem.__dict__):
+            #ic (elem.__dict__)
+            ic (elem.expression.__dict__)
+            ic (elem.fluent.__dict__)
+            #ic (elem.name)
+
+    if renamed_plan is not None:
+        for elem in task.init:
+            if not bool(elem.__dict__):
+                elem_string = str(elem)
+                #ic (elem_string)
+                new_elem_string = elem_string[elem_string.find("Atom")+4:]
+                predicate = new_elem_string[1:new_elem_string.find("(")]
+                #ic (predicate)
+                #if "cfree" in predicate:
+                #    predicate = "not cfree"
+
+                if predicate != "=" and predicate != "identical":
+                    objects = new_elem_string[new_elem_string.find("(") + 1:new_elem_string.find(")")]
+                    objects = objects.replace(" ","")
+                    objects = objects.split(",")
+                    if len(objects) != 0:
+                        if objects[0] != '' :
+                            init.append(tuple([predicate]+objects))
+                        else:
+                            init.append((predicate,))
+                    else:
+                        init.append((predicate,))
+                    #for object in objects:
+                    #    #init.append([predicate,objects])
+
+        #init = add_negative_to_init(init,negative)
+        ic (init)
+        init_goal_pddl = generate_pddl_from_init_goal(init, goal, 'discrete_tamp')
+
+        path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp/"
+        file_number = 11
+        f = open(path + "problem0" + str(file_number) + ".pddl", "w")
+        f.write(init_goal_pddl)
+        f.close()
+        #exit()
+
+    '''
+    #ic (init)
+
+    #ic (" * ** ** * * * * renamed plan ** **** ** " , renamed_plan)
+    if renamed_plan is None:
+        return instantiated, None, temporal_plan, INF
+
+    #ic ("time taken for planning",end_time-start_time)
+    action_instances = [action_from_name[name if RENAME_ACTIONS else '({} {})'.format(name, ' '.join(args))]
+                        for name, args in renamed_plan]
+    #ic("Plan validity")
+    #plan_validity = is_valid_plan(task.init+task.axioms, action_instances)
+    #ic (renamed_plan)
+    #ic (action_instances)
+    cost = get_plan_cost(action_instances, cost_from_action)
+    return instantiated, action_instances, temporal_plan, cost
+
+def solve_optimistic_learned(domain, stream_domain, applied_results, all_results,
+                                opt_evaluations, node_from_atom, goal_expression,
+                                effort_weight, obj_conversions,domain_name, debug=False, **kwargs):
+    #print(sorted(map(fact_from_evaluation, opt_evaluations)))
+    #ic (node_from_atom)
+    planner_helper_build = time.time()
     temporal_plan = None
     problem = get_problem(opt_evaluations, goal_expression, stream_domain)  # begin_metric
+    #ic (problem.__dict__)
     with Verbose(verbose=debug):
         task = task_from_domain_problem(stream_domain, problem)
         instantiated = instantiate_task(task)
+    #ic(task.__dict__)
     if instantiated is None:
+        print (" ** returning none due to instantiation benig none ** ")
         return instantiated, None, temporal_plan, INF
 
     cost_from_action = {action: action.cost for action in instantiated.actions}
@@ -315,19 +522,185 @@ def solve_optimistic_sequential(domain, stream_domain, applied_results, all_resu
         instantiate_optimizer_axioms(instantiated, domain, all_results)
     action_from_name = rename_instantiated_actions(instantiated, RENAME_ACTIONS)
     # TODO: the action unsatisfiable conditions are pruned
+    sas_task_time = time.time()
     with Verbose(debug):
         sas_task = sas_from_instantiated(instantiated)
         #sas_task.metric = task.use_min_cost_metric
         sas_task.metric = True
-
+    ic ("Planner b4 time" , time.time()-planner_helper_build)
+    #ic (instantiated)
     # TODO: apply renaming to hierarchy as well
     # solve_from_task | serialized_solve_from_task | abstrips_solve_from_task | abstrips_solve_from_task_sequential
-    renamed_plan, _ = solve_from_task(sas_task, debug=debug, **kwargs)
+    #ic (task.__dict__)
+    obj_conversions_pddlstream = {}
+    for object in task.objects:
+        #ic (obj_from_pddl(object.name))
+        obj_conversions_pddlstream[obj_from_pddl(object.name)] = object.name
+    #path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp_test/"
+    #init_goal_pddl = generate_pddl_from_task(task, 'discrete_tamp')
+    #f = open(path + "problem0" + str(file_number) + ".pddl", "w")
+    #f.write(init_goal_pddl)
+    #f.close()
+    #start_time = time.time()
+    #domain_name = 'Discrete_tamp'
+    #test_env_name = "Discrete_tampTest"
+    test_env_name = domain_name + "Test"
+
+    env = pddlgym.make("PDDLEnv{}-v0".format(test_env_name))
+    idx = -1
+    env.fix_problem_index(idx)
+    #ic(env.problems[idx].problem_fname)
+    action_space = env.action_space
+    state, _ = env.reset()
+    curr_plan_states = []
+    new_plan = []
+    ensemble = False
+    max_plan_length_permitted = 50
+    seed = 0
+    is_strips_domain = True
+    test_planner_name = 'fd-lama-first'
+    planner = _create_planner(test_planner_name,debug)
+
+    num_train_problems = 1
+    num_epochs = 20
+    train_planner_name = test_planner_name
+    guider_name = 'gnn-bce-10'
+    #guider_name = 'Discrete_tamp_seed_0'
+    guider = _create_guider(guider_name, train_planner_name,
+                            num_train_problems, is_strips_domain,
+                            num_epochs, seed,250,2)
+    guider.seed(seed)
+    guider.train(domain_name)
+    test_planner = IncrementalPlanner(
+        is_strips_domain=is_strips_domain,
+        base_planner=planner, search_guider=guider, seed=seed)
+
+    start_time = time.time()
+    while True:
+        #grounding_time = time.time()
+        groundings = env.action_space.all_ground_literals(state)
+        action_space = env.action_space
+        #ic ("grounding time", time.time()-grounding_time)
+        prev_actions = None
+        prev_graph = None
+        inference_time = time.time()
+        action_param_list, prev_graph = test_planner._guidance.get_action_object_scores_ensemble(state,action_space._action_predicate_to_operators,
+                                                                                            groundings,prev_graph,prev_graph, ensemble=ensemble)
+        #ic ("inference time",time.time()-inference_time)
+        action_selection_time_1 = time.time()
+        groundings = list(groundings)
+        groundings_list = []
+        for grounding in groundings:
+            grounding_action = grounding.predicate
+            objects = grounding.variables
+            groundings_list.append(pddlgym.structs.Literal(grounding_action, objects))
+
+        #ic (action_param_list)
+        action_selection_time_2= time.time()
+        for action_data in action_param_list:
+            in_grounding = False
+            decoded_action, decoded_action_parameters = action_data[0], action_data[1]
+            new_action = pddlgym.structs.Literal(decoded_action, decoded_action_parameters)
+            for grounded_action in groundings_list:
+                in_grounding_temp = True
+                if new_action.predicate == grounded_action.predicate:
+                    for grounded_var, action_var in zip(grounded_action.variables, new_action.variables):
+                        if grounded_var != action_var:
+                            in_grounding_temp = False
+                            break
+                    if in_grounding_temp == True:
+                        in_grounding = True
+                        break
+            if in_grounding == False:
+                continue
+            step_taking_time = time.time()
+            state = env.step(new_action)
+            step_taking_end_time = time.time()
+            #ic ("Step taking time", step_taking_end_time-step_taking_time)
+            state = state[0]
+            break
+        action_selection_end_time = time.time()
+        #ic ("action selection time time",action_selection_end_time-action_selection_time_1)
+        #ic ("action selection time time",action_selection_end_time-action_selection_time_2)
+        curr_plan_states.append(state[0])
+        new_plan.append(new_action)
+        #ic (new_plan)
+        plan_val_time = time.time()
+        #ic (env.metadata)
+        #ic (state)
+        #ic (state.goal)
+        #ic (state.goal.__dict__)
+        #ic (state.literals)
+        plan_found = True
+
+        for goal in state.goal.literals:
+            if goal not in list (state.literals):
+                plan_found = False
+
+        if plan_found == True :
+            break
+
+        # if num_actions > 40 :
+        # if len(new_plan) > 8:
+        if len(new_plan) > max_plan_length_permitted:
+            # output_plan_lengths.append(len(new_plan))
+            #ic (new_plan)
+            #new_plan = None
+            #exit()
+            break
+    start_state, _ = env.reset()
+    #new_plan = []
+    discrepancy_search_bool = False
+    discrepancy_search_bool = True
+    if discrepancy_search_bool == True:
+        if len(new_plan) >= max_plan_length_permitted:
+            ic (new_plan)
+            succesful_plans = discrepancy_search(test_planner, env, start_state, action_space, ensemble, new_plan)
+            # for plan in succesful_plans:
+            ic (succesful_plans)
+            if len(succesful_plans) != 0:
+                new_plan = succesful_plans[-1]
+                ic (new_plan)
+                if new_plan != None:
+                    # ic ("Valid plan")
+                    print("valid plan")
+                else :
+                    new_plan = None
+            else :
+                new_plan = None
+    end_time = time.time()
+    #ic ("Time taken by learned system", end_time-start_time)
+    #renamed_plan, _ = solve_from_task(sas_task, debug=debug, **kwargs)
+    #renamed_plan = learned_planner(task)
+    #ic (" * ** ** * * * * renamed plan ** **** ** " )
+    #ic (new_plan[0].__dict__)
+    ic (new_plan)
+    if new_plan == None :
+        renamed_plan = None
+    else :
+        #renamed_plan = new_plan[:]
+        #ic (list(state))
+        renamed_plan = get_renamed_plan_from_pddlgym_plan(new_plan,obj_conversions,obj_conversions_pddlstream)
+    #renamed_plan = pddl
+    #start_time = time.time()
+    ##renamed_plan, _ = solve_from_task(sas_task, debug=debug, **kwargs)
+    #end_time = time.time()
+    #ic ("Planner search time", end_time-start_time)
+    ic (" * ** ** * * * * renamed plan ** **** ** " , renamed_plan)
     if renamed_plan is None:
         return instantiated, None, temporal_plan, INF
 
+    #action_instances = [action_from_name[name if RENAME_ACTIONS else '({} {})'.format(name, ' '.join(args))]
+    #                    for name, args in renamed_plan]
+    action_instances = []
+    #for action in renamed_plan:
+    #    action_instances.append(action_from_name[action.])
     action_instances = [action_from_name[name if RENAME_ACTIONS else '({} {})'.format(name, ' '.join(args))]
                         for name, args in renamed_plan]
+    ic (action_instances)
+    #renamed_plan_2 = pddlgym_plan_to_pddlstream_plan(new_plan,renamed_plan,opt_evaluations,None)
+    #ic (renamed_plan)
+    #ic (action_instances)
     cost = get_plan_cost(action_instances, cost_from_action)
     return instantiated, action_instances, temporal_plan, cost
 
@@ -340,9 +713,19 @@ def plan_streams(evaluations, goal_expression, domain, all_results, negative, ef
     #reachieve = reachieve and not using_optimizers(all_results)
     #for i, result in enumerate(all_results):
     #    print(i, result, result.get_effort())
+    #ic (all_results)
+    #ic (evaluations)
     applied_results, deferred_results = partition_results(
         evaluations, all_results, apply_now=lambda r: not (simultaneous or r.external.info.simultaneous))
+    #ic (applied_results)
     stream_domain, deferred_from_name = add_stream_actions(domain, deferred_results)
+
+    #updated_init  = get_init_from_evals(evaluations)
+    #ic (evaluations)
+    #ic (len(evaluations))
+    #ic (updated_init)
+    #updated_init = add_negative_to_init (updated_init,negative)
+    #ic (updated_init)
 
     if reachieve and not using_optimizers(all_results):
         achieved_results = {n.result for n in evaluations.values() if isinstance(n.result, Result)}
@@ -353,30 +736,212 @@ def plan_streams(evaluations, goal_expression, domain, all_results, negative, ef
     # TODO: could iteratively increase max_effort
     node_from_atom = get_achieving_streams(evaluations, applied_results, # TODO: apply to all_results?
                                            max_effort=max_effort)
+    #ic (node_from_atom)
+    #ic (node_from_atom)
+    #ic(len(node_from_atom))
+    '''
+    #ic (type(node_from_atom))
+    #ic (node_from_atom.keys())
+    #file_write_str = generate_pddl_from_init_goal(node_from_atom,goal_expression)
+    #ic (file_write_str)
+    #path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/unity_1/"
+    #f = open(path+"problem" +str(7) +".pddl", "w")
+    #f.write(file_write_str)
+    #f.close()
+    '''
     opt_evaluations = {evaluation_from_fact(f): n.result for f, n in node_from_atom.items()}
+    updated_opt_init = None
+    opt_init = None
+    '''
+    REQUIRED FOR CONT
+    '''
+
+    opt_init,opt_obj_conversion = get_init_from_opt_evals(opt_evaluations)
+    updated_opt_init = add_negative_to_init (opt_init,negative)
+    #pddl_problem = get_problem_pddl(evaluations,goal_expression,domain.pddl,temporal=True)
+    #ic (pddl_problem)
+    #exit()
+    #ic (opt_init)
+    #ic (opt_evaluations)
+    #ic (updated_opt_init)
+    #ic (opt_init)
+    #ic (negative)
+    #ic (evaluations)
+    #ic (opt_evaluations)
+    #ic (len(opt_evaluations))
+    #ic (len(opt_evaluations))
+    #ic (opt)
     if UNIVERSAL_TO_CONDITIONAL or using_optimizers(all_results):
         goal_expression = add_unsatisfiable_to_goal(stream_domain, goal_expression)
 
     temporal = isinstance(stream_domain, SimplifiedDomain)
     optimistic_fn = solve_optimistic_temporal if temporal else solve_optimistic_sequential
-    instantiated, action_instances, temporal_plan, cost = optimistic_fn(
-        domain, stream_domain, applied_results, all_results, opt_evaluations,
-        node_from_atom, goal_expression, effort_weight, **kwargs)
+    #ic (goal_expression)
+    goal = []
+    #ic (goal_expression)
+    #ic (len(goal_expression))
+    #ic (len(goal_expression[0]))
+    #ic (type(goal_expression[0]))
+
+    if goal_expression[0] == 'and' :
+        for goal_exp in goal_expression:
+            #ic (goal_exp)
+            if goal_exp == 'and' :
+                goal.append('and')
+            else :
+                goal_elem = []
+                for elem in goal_exp:
+                    '''
+                    if type(elem) == str:
+                        goal_elem.append(elem)
+                    elif type(elem) == pddlstream.language.object.Object :
+                        #ic (elem.__dict__)
+                        goal_elem.append(elem.value)
+                    '''
+                    goal_elem.append(elem)
+
+                goal.append(tuple(goal_elem))
+                    #ic (elem)
+                    #ic (type(elem))
+    else :
+        goal_elem = []
+        for elem in goal_expression:
+            '''
+            if type(elem) == str:
+                goal_elem.append(elem)
+            elif type(elem) == pddlstream.language.object.Object:
+                # ic (elem.__dict__)
+                goal_elem.append(elem.value)
+            '''
+            goal_elem.append(elem)
+        goal.append(tuple(goal_elem))
+    #ic (goal)
+    #exit()
+    #ic (node_from_atom)
+    #ic (optimistic_fn)
+    #ic (evaluations)
+
+    #domain_name = 'Discrete_tamp'
+    domain_name = 'Discrete_tamp_3d'
+    domain_name = 'Kuka'
+    domain_str = domain_name.lower()
+    domain_str_eval = domain_name.lower()
+    domain_str_test = domain_name.lower() + "_test"
+    #domain_str = 'pddlstream_tamp'
+    test = True
+    if test == True:
+        domain_str_eval += '_test'
+    use_learned = False
+    #use_learned = True
+    data_collection = False
+    data_collection = True
+    if use_learned == True :
+        optimistic_fn = solve_optimistic_learned
+        #ic(datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%f_%p"))
+        #ic ("storing data for pddl gym planning")
+        init_goal_pddl,obj_conversions = generate_pddl_from_init_goal(updated_opt_init, goal, domain_str)
+        #train_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp/"
+        test_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/" + domain_str_eval + "/"
+        path = test_path
+        filename = path + "problem_" + datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%f_%p") + ".pddl"
+        f = open(filename, "w")
+        f.write(init_goal_pddl)
+        f.close()
+
+        instantiated, action_instances, temporal_plan, cost = optimistic_fn(
+            domain, stream_domain, applied_results, all_results, opt_evaluations,
+            node_from_atom, goal_expression, effort_weight,obj_conversions,domain_name, **kwargs)
+    else :
+        instantiated, action_instances, temporal_plan, cost = optimistic_fn(
+            domain, stream_domain, applied_results, all_results, opt_evaluations,
+            node_from_atom, goal_expression, effort_weight, **kwargs)
+
+    #ic (action_instances)
+    #ic (temporal_plan)
+    #exit()
+
+    #ic (action_instances)
     if action_instances is None:
+        print ("* * ** ** ** * Action instances is none")
         return OptSolution(FAILED, FAILED, cost)
 
+    else :
+        #ic ("renamed plan not none")
+        train = True
+        test = False
+        #test = True
+        #for object in task.objects:
+            # ic (obj_from_pddl(object.name))
+        #    obj_conversions_pddlstream[obj_from_pddl(object.name)] = object.name
+        #init_goal_pddl,obj_conversion = generate_pddl_from_init_goal(updated_opt_init, goal, 'discrete_tamp')
+        #ic (obj_conversion)
+        #ic (init_goal_pddl)
+        if data_collection == True :
+            paths = []
+            #goal = ('AtPose', 'b0', np.array([2, 0]))
+            #ic ("Collecting data")
+            init_goal_pddl,obj_conversions = generate_pddl_from_init_goal(updated_opt_init,goal, domain_str)
+            #ic (obj_conversions)
+            path = None
+            #train_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp/"
+            #test_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/discrete_tamp_test/"
+            train_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/" + domain_str + "/"# discrete_tamp/"
+            test_path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/" + domain_str_test + "/"#discrete_tamp_test/"
+            if train == True :
+                paths.append(train_path)
+            if test == True :
+                paths.append(test_path)
+            #else :
+            for path in paths:
+                current_time = datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%f_%p")
+                filename = path + "problem_" + current_time + ".pddl"
+                solution_filename = path + "plans/plan_" + current_time + ".pddl"
+                ic (domain_str)
+                pddlgym_solution = pddlgym_from_pddlstream_plan(action_instances,obj_conversions,domain_str)
+                ic (pddlgym_solution)
+                f = open(filename,"w")
+                f.write(init_goal_pddl)
+                f.close()
+                #f = open(solution_filename,"w")
+                #f.write(pddlgym_solution)
+                #f.close()
+                with open(solution_filename, "wb") as f:
+                    pickle.dump(pddlgym_solution, f)
+                f.close()
+
+    exit()
     action_instances, axiom_plans = recover_axioms_plans(instantiated, action_instances)
     # TODO: extract out the minimum set of conditional effects that are actually required
     #simplify_conditional_effects(instantiated.task, action_instances)
     stream_plan, action_instances = recover_simultaneous(
         applied_results, negative, deferred_from_name, action_instances)
 
+    #ic (stream_plan)
+    #ic (" ** ** ** * in plan streams *** * ** * ")
+    #ic (action_instances, stream_plan)
+
+    #ic (action_instances)
+    #ic (pddl_from_instance(action_instances[0]))
     action_plan = transform_plan_args(map(pddl_from_instance, action_instances), obj_from_pddl)
+    #ic (action_plan)
     replan_step = min([step+1 for step, action in enumerate(action_plan)
                        if action.name in replan_actions] or [len(action_plan)+1]) # step after action application
 
+    #ic (evaluations)
+    #ic (opt_evaluations)
+    #ic (axiom_plans)
+    #ic (replan_step)
+    #ic (stream_plan)
+    #for neg in negative:
+    #    for instance in neg.instances:
+    #        ic (instance)
+
     stream_plan, opt_plan = recover_stream_plan(evaluations, stream_plan, opt_evaluations, goal_expression, stream_domain,
         node_from_atom, action_instances, axiom_plans, negative, replan_step)
+    #ic (stream_plan)
+    #for neg in negative:
+    #    for instance in neg.instances:
+    #        ic (instance)
     if temporal_plan is not None:
         # TODO: handle deferred streams
         assert all(isinstance(action, Action) for action in opt_plan.action_plan)
@@ -384,3 +949,109 @@ def plan_streams(evaluations, goal_expression, domain, all_results, negative, ef
     #ic (node_from_atom)
     #exit()
     return OptSolution(stream_plan, opt_plan, cost)
+
+
+#def generate_pddl_from_task(task, 'discrete_tamp'):
+
+def get_renamed_plan_from_pddlgym_plan(plan,obj_conversions_pddl_gym,obj_conversions_pddlstream):
+    renamed_plan = []
+    #ic (obj_conversions_pddl_gym)
+    #ic (obj_conversions_pddlstream)
+    for action in plan:
+        #ic (action.__dict__)
+        variables = []
+        for var in action.variables :
+            #ic(obj_conversions_pddl_gym[str(var.split(":")[0])])
+            #ic(obj_conversions_pddlstream[obj_conversions_pddl_gym[str(var.split(":")[0])]])
+            variables.append(obj_conversions_pddlstream[obj_conversions_pddl_gym[str(var.split(":")[0])]])
+
+        new_action = Action(str(action.predicate),variables)
+        renamed_plan.append(new_action)
+
+    #ic (renamed_plan)
+    return renamed_plan
+
+def pddlgym_from_pddlstream_plan(action_instances,obj_conversions,domain):
+    pddl_plan = []
+    #obj_conversions_inverted =  {str(v):k for k, v in obj_conversions.items()}
+    obj_conversions_inverted = {}
+    for key,value in obj_conversions.items():
+        if 'p' in key :
+            obj_conversions_inverted['p'+str(value)] = key
+        if 'q' in key:
+            obj_conversions_inverted['q' + str(value)] = key
+        if 'b' in key:
+            obj_conversions_inverted['b' + str(value)] = key
+        if 't' in key:
+            obj_conversions_inverted['t' + str(value)] = key
+        else :
+            obj_conversions_inverted[str(value)] = key
+    #ic (obj_conversions)
+    #ic (obj_conversions_inverted)
+
+    action_position_type = {}
+    #domain = 'discrete_tamp'
+    if domain.lower() == 'discrete_tamp':
+        action_position_type = {'move':{0:'q',1:'q'},
+                                'pick':{0:'b',1:'p',2:'q'},
+                                'place':{0:'b',1:'p',2:'q'} }
+    elif domain.lower() == 'discrete_tamp_3d':
+        action_position_type = {'move':{0:'q',1:'t',2:'q'},
+                                'pick':{0:'b',1:'p',2:'q'},
+                                'place':{0:'b',1:'p',2:'q'},
+                                'stack':{0:'b',1:'b',2:'p',3:'q'},
+                                'unstack':{0:'b',1:'b',2:'p',3:'q'}}
+    elif domain.lower() == 'kuka':
+        '''
+        action_position_type = {'move_free':{0:'q',1:'q',2:'t'},
+                                'move_holding': {0:'q',1:'q',2:'b',3:'g',4:'t'},
+                                'pick': {0: 'b', 1: 'p', 2: 'g',3:'q',4:'t'},
+                                'place': {0: 'b', 1: 'p', 2: 'g', 3: 'q', 4: 't'},
+                                'clean':{0:'b',1:'r'},
+                                'cook' : {0:'b',1:'r'}
+                                }
+        '''
+        action_position_type = {'move_free': {0: 'q', 1: 'q', 2: 't'},
+                                'move_holding': {0: 'q', 1: 'q', 2: '', 3: 'g', 4: 't'},
+                                'pick': {0: '', 1: 'p', 2: 'g', 3: 'q', 4: 't'},
+                                'place': {0: '', 1: 'p', 2: 'g', 3: 'q', 4: 't'},
+                                'clean': {0: '', 1: 'r'},
+                                'cook': {0: '', 1: 'r'}
+                                }
+    ic (action_instances)
+    ic (obj_conversions)
+    ic (obj_conversions_inverted)
+    #ic (action_instances)
+    for action in action_instances:
+        ic (action.__dict__)
+        decoded_action = action.action.name
+        decoded_action_parameters = []
+
+        #ic (action.__dict__)
+        #ic (action.action.__dict__)
+        #for param in action.action.parameters:
+        index = 0
+        for key,param in action.var_mapping.items():
+
+            #ic (key+obj_from_pddl(param)))
+            ic (action_position_type[decoded_action][index])
+            curr_type = (action_position_type[decoded_action][index])
+            #decoded_action_parameters.append(obj_conversions_inverted[str(obj_from_pddl(param))])
+            #ic (obj_conversions_inverted)
+            ic (curr_type)
+            ic (param)
+            ic (curr_type+str(obj_from_pddl(param)))
+            decoded_action_parameters.append(obj_conversions_inverted[curr_type + str(obj_from_pddl(param))])
+            #ic (param.__dict__)
+
+            index += 1
+        #ic (new_action)
+        new_action = [decoded_action,decoded_action_parameters]
+        pddl_plan.append(new_action)
+
+    ic (pddl_plan)
+    exit()
+    return pddl_plan
+
+
+

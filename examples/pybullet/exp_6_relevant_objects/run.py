@@ -27,6 +27,7 @@ from pddlstream.language.function import FunctionInfo
 from pddlstream.language.stream import StreamInfo, PartialInputs
 from pddlstream.language.object import SharedOptValue
 from pddlstream.language.generator import from_gen_fn, from_test
+from pddlstream.utils import generate_pddl_from_init_goal
 from collections import namedtuple
 from icecream import ic
 import math
@@ -802,8 +803,8 @@ def pddlstream_from_problem(unity_agent, problem, teleport=False):
             ('CanMove',),
             ('BConf', initial_bq),
             ('AtBConf', initial_bq),
-            ('Openable', open_id),
-            ('Openable', open_id_2),
+            #('Openable', open_id),
+            #('Openable', open_id_2),
             ('Region', region_pose),
             #('Pickable', region_id),
             #('Pickable', pickup_id_2),
@@ -984,7 +985,7 @@ def post_process(problem, plan, teleport=False):
 
 #######################################################
 
-def get_relevant_objects(init,goal):
+def get_relevant_objects(init_goal_pddl, file_number):
     seed = 0
     #domain_name = pddlgym_env_names[domain_name]
     domain_name = 'Unity_1'
@@ -996,11 +997,13 @@ def get_relevant_objects(init,goal):
     test_planner_name = "fd-lama-first"
     planner = _create_planner(test_planner_name)
     guider_name = "gnn-bce-10"
-    problem_idx = 3
+    problem_idx = file_number
     timeout = 120
-
+    path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/unity_1_test/"
+    f = open(path+"problem1" +str(file_number) +".pddl", "w")
+    f.write(init_goal_pddl)
+    f.close()
     #ic ("In get relevant objs 1")
-
     guider = _create_guider(guider_name, train_planner_name,
                             num_train_problems, is_strips_domain,
                             num_epochs, seed)
@@ -1024,101 +1027,42 @@ def get_relevant_objects(init,goal):
     state, _ = env.reset()
     start = time.time()
     obj_scores = planner_to_test.get_object_scores(env.domain, state, timeout=timeout)
-    ic (obj_scores)
+    #assert isinstance(obj_scores, object)
+    #ic (obj_scores)
+    return obj_scores
 
-def write_init_to_file(init, goal):
-    ic ("writing to file")
-    path = "/Users/rajesh/anaconda3/envs/35_vision_2/lib/python3.7/site-packages/pddlgym/pddl/unity_1_test/"
-    f = open(path+"problem13.pddl", "w")
-    f.write("(define (problem unity_1)\n(:domain unity_1) \n (:objects\n")
+def get_relevant_predicates(init, obj_scores,threshold = 0.81):
 
-    objects = []
-    for elem in init:
-        elem = list(elem)
+    #ic (obj_scores.keys())
+    relevant_objs = {}
+    for key,value in obj_scores.items():
+        if value > threshold :
+            relevant_objs[key] = value
 
-        if len(elem) == 1:
-            continue
-        elif len(elem) == 2:
-            if "cost" in str(elem[1]):
-                continue
-            if str(elem[1]) not in objects :
-                f.write(str(elem[1])+"\n")
-                objects.append(str(elem[1]))
-        elif len(elem) == 3:
-            if "cost" in str(elem[1]) or "cost" in str(elem[2]):
-                continue
-            if str(elem[1]) not in objects :
-                f.write(str(elem[1])+"\n")
-                objects.append(str(elem[1]))
-            if str(elem[2]) not in objects :
-                f.write(str(elem[2])+"\n")
-                objects.append(str(elem[2]))
-    goal_pred = list(goal)
+    relevant_init = init[:]
 
-    #ic (goal_pred)
-    #ic (len(goal_pred))
-    if len(goal_pred) == 2:
-        #ic ("len = 2")
-        #ic (goal_pred[1])
-        if str(goal_pred[1]) not in objects:
-            f.write(str(goal_pred[1]) + "\n")
-            objects.append(str(goal_pred[1]))
-    elif len(goal_pred) == 3:
-        #ic ("len = 3")
-        #ic (goal_pred[1])
-        #ic (goal_pred[2])
-        if str(goal_pred[1]) not in objects :
-            f.write(str(goal_pred[1])+"\n")
-            objects.append(str(goal_pred[1]))
-        if str(goal_pred[2]) not in objects :
-            f.write(str(goal_pred[2])+"\n")
-            objects.append(str(goal_pred[2]))
-    #exit()
-    f.write("\n)")
-    f.write("\n(:init\n")
+    for predicate in init :
+        predicate_parts = list(predicate)
+        #ic (predicate_parts)
+        relevant = 0
+        for elem in predicate_parts[1:]:
+            #ic (elem)
+            if any(str(elem) in obj_key for obj_key in relevant_objs.keys()):
 
-    for elem in init:
-        elem = list(elem)
-        #elem = elem.split(",")
-        #ic (elem)
-        cost_flag = 0
-        if len (elem) == 1 :
-            if "cost" in str(elem[0]) :#or "cost" in str(elem[2]):
-                continue
-            write_str = "\n(" + str(elem[0])  + ")"
-        else:
-            write_str = "\n("
-            for item in elem :
-                if "Cost" in str(item):
-                    cost_flag = 1
-                    break
-                write_str += " " + str(item) #+ " "+ str(elem[1]) + ")"
-            write_str += ")"
-        if cost_flag == 0 :
-            f.write(write_str)
+                relevant = 1
+                break
+        if relevant == 0 and len(predicate_parts) > 1:
+            #ic ("removing element")
+            #ic (predicate)
+            relevant_init.remove(predicate)
 
-    f.write("\n)")
-    f.write("\n(:goal\n")
-    f.write("(and ")
+    #ic (obj_scores)
+    #ic (len(init))
+    #ic (len(relevant_init))
+    #ic (relevant_init)
 
-    #ic (goal)
-    '''
-    for elem in goal :
-        ic (elem)
-        elem = list(elem)
-        write_str = "\n("+ str(elem[0]) + " "+ str(elem[1]) + ")"
-        f.write(write_str)
-    '''
-    goal = list(goal)
-    if len(goal) == 2:
-        write_str = "\n" + "("+ str(goal[0]) + " " + str(goal[1]) +")"
-    if len(goal) == 3:
-        write_str = "\n" + "(" +  str(goal[0]) + " " + str(goal[1]) + " "+ str(goal[2])+ ")"
-    f.write(write_str)
-    f.write("\n)")
-    f.write("\n)")
-    f.write("\n)")
-    f.close()
+    return relevant_init
+
 
 def main(unity_agent=None, display=True, teleport=False, partial=False):
     parser = argparse.ArgumentParser()
@@ -1162,23 +1106,49 @@ def main(unity_agent=None, display=True, teleport=False, partial=False):
         'sample-pickable-point-near-object': StreamInfo(from_fn(opt_openable_fn)),
         'sample-droppable-point-near-object': StreamInfo(from_fn(opt_openable_fn)),
     }
-    _, _, _, stream_map, init, goal = pddlstream_problem
+    #_, _, _, stream_map, init, goal = pddlstream_problem
+    domain_pddl, constant_map, stream_pddl, stream_map, init, goal  =pddlstream_problem
     print('Init:', init)
     print('Goal:', goal)
     print('Streams:', stream_map.keys())
     args.algorithm = 'adaptive'
     #ic ("Before callig the write to init function")
-    write_init_to_file(init,goal)
-    get_relevant_objects("","")
+    init_goal_pddl = generate_pddl_from_init_goal(init,goal)
+    obj_scores = get_relevant_objects(init_goal_pddl,1)
+    init_subset = []
+    prev_init = []
+
     #ic ("After write to init function")
+    threshold = 0.001
+    N = 1
+    while len(init_subset) != len(init):
+        #ic (len(init_subset))
+        init_subset = get_relevant_predicates(init,obj_scores,threshold**N )
+        while len(init_subset) <= len(prev_init) and len(init_subset) != len(init):
+            N += 1
+            init_subset = get_relevant_predicates(init, obj_scores, threshold ** N)
+            #ic(len(prev_init))
+            #ic (len(init_subset))
+            #ic (N)
+            #prev_init = init_subset[:]
+        ic (init_subset)
+        pddlstream_problem_updated =\
+            domain_pddl, constant_map, stream_pddl, stream_map, init_subset, goal
+        with LockRenderer():
+            #solution = solve_incremental(pddlstream_problem, debug=True)
+            #solution = solve_focused(pddlstream_problem, stream_info=stream_info, success_cost=INF, debug=False)
+            solution = solve_focused(pddlstream_problem_updated, stream_info=stream_info, success_cost=INF, debug=False)
+            ic (solution.plan)
+            if solution.plan != None :
+                break
+        N +=1
+        prev_init = init_subset[:]
+        print (" BACK IN MAIN")
+
     exit()
 
     pr = cProfile.Profile()
     pr.enable()
-    with LockRenderer():
-        #solution = solve_incremental(pddlstream_problem, debug=True)
-        solution = solve_focused(pddlstream_problem, stream_info=stream_info, success_cost=INF, debug=False)
-    print (" BACK IN MAIN")
     #exit()
     '''
     if stream_plan is not None :

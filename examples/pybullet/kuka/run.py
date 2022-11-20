@@ -170,7 +170,8 @@ def main():
     args = parser.parse_args()
     print('Arguments:', args)
 
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect(use_gui=True)
     robot, names, movable = load_world()
     print('Objects:', names)
     saver = WorldSaver()

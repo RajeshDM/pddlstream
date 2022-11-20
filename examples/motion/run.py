@@ -84,6 +84,7 @@ def main(max_time=20):
     """
     parser = create_parser()
     args = parser.parse_args()
+    args.arguments = 'focused'
     print('Arguments:', args)
 
     #args.algorithm = 'focused'
@@ -117,6 +118,7 @@ def main(max_time=20):
     #for sample in samples:
     #    viewer.draw_point(sample)
     #user_input('Continue?')
+    exit()
 
     # TODO: use the same viewer here
     draw_roadmap(roadmap, obstacles, regions) # TODO: do this in realtime

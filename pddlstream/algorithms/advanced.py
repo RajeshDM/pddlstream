@@ -8,9 +8,11 @@ from pddlstream.language.function import Function
 from pddlstream.language.optimizer import UNSATISFIABLE, ConstraintStream
 from pddlstream.language.stream import Stream
 from pddlstream.utils import find_unique, get_mapping
+from icecream import ic
 
 UNIVERSAL_TO_CONDITIONAL = False
 AUTOMATICALLY_NEGATE = True
+#AUTOMATICALLY_NEGATE = False
 
 
 def get_predicates(expression):
@@ -137,9 +139,19 @@ def identify_non_producers(externals):
 
     producers = {e1 for e1, _ in pairs}
     non_producers = set(externals) - producers
+    #ic (producers)
+    #ic (non_producers)
     for external in non_producers:
         #if external.is_fluent:
         #external.num_opt_fns = 0 # Streams that can be evaluated at the end as tests
+        '''
+        ic (external)
+        #ic(external.is_test)
+        ic (isinstance(external,Stream))
+        ic(external.could_succeed())
+        ic (external.is_negated)
+        ic (all(len(certifiers[predicate]) == 1 for predicate in get_certified_predicates(external)))
+        '''
         if AUTOMATICALLY_NEGATE and isinstance(external, Stream) \
                 and external.is_test and not external.is_negated and external.could_succeed() and \
                 all(len(certifiers[predicate]) == 1 for predicate in get_certified_predicates(external)): # TODO: not external.is_fluent?

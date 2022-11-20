@@ -8,6 +8,7 @@ from pddlstream.language.constants import EQ, AND, OR, NOT, CONNECTIVES, QUANTIF
     FunctionAction, DurativeAction, Solution, Assignment, OptPlan, Certificate
 from pddlstream.language.object import Object, OptimisticObject
 from pddlstream.utils import str_from_object, apply_mapping
+from icecream import ic
 
 def replace_expression(parent, fn):
     prefix = get_prefix(parent)
@@ -27,6 +28,10 @@ def replace_expression(parent, fn):
         return prefix, parameters, replace_expression(child, fn)
     name = get_prefix(parent).lower()
     args = get_args(parent)
+    #ic (args)
+    #ic (args[1])
+    #if len(args) > 0:
+    #ic (fn(args).__dict__)
     return Fact(name, map(fn, args))
 
 def obj_from_value_expression(parent):
@@ -112,12 +117,17 @@ def objects_from_evaluations(evaluations):
     # TODO: assumes object predicates
     objects = set()
     for evaluation in evaluations:
+        #ic (evaluation.head.args)
+        #if len(evaluation.head.args) >0:
+            #ic (type(evaluation.head.args[0]))
+            #ic (evaluation.head.args[0].__dict__)
         objects.update(evaluation.head.args)
     return objects
 
 ##################################################
 
 def head_from_fact(fact):
+    #ic (get_args(fact).args)
     return Head(get_prefix(fact), get_args(fact))
 
 def evaluation_from_fact(fact):
@@ -130,6 +140,14 @@ def evaluation_from_fact(fact):
     else:
         head = fact
         value = True
+    '''
+    ic (head_from_fact(head))
+    if len(head_from_fact(head).args) > 0:
+        ic(type(head_from_fact(head).args[0]))
+        ic(head_from_fact(head).args[0].__dict__)
+    '''
+    #ic (head_from_fact(head).args)
+    #ic (value)
     return Evaluation(head_from_fact(head), value)
 
 def fact_from_evaluation(evaluation):
@@ -153,9 +171,12 @@ def fact_from_evaluation(evaluation):
 ##################################################
 
 def obj_from_pddl(pddl):
+    #ic (pddl)
     if pddl in Object._obj_from_name:
+        #ic(Object.from_name(pddl))
         return Object.from_name(pddl)
     elif pddl in OptimisticObject._obj_from_name:
+        #ic (OptimisticObject.from_name(pddl))
         return OptimisticObject.from_name(pddl)
     raise ValueError(pddl)
 
@@ -175,8 +196,11 @@ def temporal_from_sequential(action):
     return DurativeAction(new_name, args, start, duration)
 
 def transform_action_args(action, fn):
+    #ic (type(action))
+    #ic (action)
     if isinstance(action, Action):
         name, args = action
+        #ic (name, args)
         return Action(name, tuple(map(fn, args)))
     elif isinstance(action, DurativeAction):
         action = temporal_from_sequential(action)
@@ -197,7 +221,11 @@ def transform_action_args(action, fn):
 
 def transform_plan_args(plan, fn):
     if not is_plan(plan):
+        #ic ("returning without transforming")
+        #ic (plan)
         return plan
+    #ic ("In transform plan args")
+    #ic (plan)
     return list(filter(lambda a: a is not None, [transform_action_args(action, fn) for action in plan]))
 
 # TODO: would be better just to rename everything at the start. Still need to handle constants

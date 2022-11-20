@@ -3,6 +3,7 @@ from itertools import count
 from pddlstream.language.constants import get_parameter_name
 #from pddlstream.language.conversion import values_from_objects
 from pddlstream.utils import str_from_object, is_hashable
+from icecream import ic
 
 USE_HASH = True
 USE_OBJ_STR = True
@@ -23,7 +24,11 @@ class Object(object):
             name = '{}{}'.format(self._prefix, self.index)
         self.pddl = name
         self.stream_instance = stream_instance # TODO: store first created stream instance
-        Object._obj_from_id[id(self.value)] = self
+        #Object._obj_from_id[id(self.value)] = self
+        if not is_hashable(value):
+            Object._obj_from_id[hash(str(self.value))] = self
+        else :
+            Object._obj_from_id[hash(self.value)] = self
         Object._obj_from_name[self.pddl] = self
         if is_hashable(value):
             Object._obj_from_value[self.value] = self
@@ -33,16 +38,24 @@ class Object(object):
         return False
     @staticmethod
     def from_id(value):
-        if id(value) not in Object._obj_from_id:
+        if hash(str(value)) not in Object._obj_from_id :
+            #return Object(str(value))
             return Object(value)
-        return Object._obj_from_id[id(value)]
+        #if id(value) not in Object._obj_from_id:
+        #    return Object(value)
+        #return Object._obj_from_id[id(value)]
+        return Object._obj_from_id[hash(str(value))]
     @staticmethod
     def has_value(value):
         if USE_HASH and not is_hashable(value):
-            return id(value) in Object._obj_from_id
+            #return id(value) in Object._obj_from_id
+            return hash(str(value)) in Object._obj_from_id
         return value in Object._obj_from_value
     @staticmethod
     def from_value(value):
+        #ic (Object._obj_from_id)
+        #ic (Object._obj_from_value)
+        #ic (Object._obj_from_name)
         if USE_HASH and not is_hashable(value):
             return Object.from_id(value)
         if value not in Object._obj_from_value:

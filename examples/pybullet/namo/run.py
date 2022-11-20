@@ -203,7 +203,8 @@ def main():
     args = parser.parse_args()
     print('Arguments:', args)
 
-    connect(use_gui=args.viewer)
+    #connect(use_gui=args.viewer)
+    connect(use_gui=True)
     with HideOutput():
         problem = problem_fn(collisions=not args.cfree)
     saver = WorldSaver()

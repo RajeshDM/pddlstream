@@ -4,6 +4,7 @@ from collections import namedtuple, OrderedDict
 from pddlstream.language.constants import is_plan, get_length, FAILED #, INFEASIBLE, SUCCEEDED
 from pddlstream.language.conversion import evaluation_from_fact, obj_from_value_expression, revert_solution
 from pddlstream.utils import INF, elapsed_time, check_memory
+from icecream import ic
 
 # Complexity is a way to characterize the number of external evaluations required for a solution
 # Most algorithms regularize to prefer lower complexity solutions
@@ -86,10 +87,21 @@ class SolutionStore(object):
 ##################################################
 
 def add_fact(evaluations, fact, result=INIT_EVALUATION, complexity=0):
+
     evaluation = evaluation_from_fact(fact)
+    '''
+    if len(evaluation.head.args) > 0:
+        #ic(type(evaluation.head.args[0]))
+        ic(evaluation.head.args[0].__dict__)
+        #ic (type(evaluation.head.args[0]))
+        ic ("\n")
+        #ic (evaluation.head.args.__dict__)
+    ic (evaluation)
+    '''
     if (evaluation not in evaluations) or (complexity < evaluations[evaluation].complexity):
         evaluations[evaluation] = EvaluationNode(complexity, result)
         return True
+    #ic(" *** eval in evals *** ")
     return False
 
 
@@ -109,7 +121,11 @@ def add_certified(evaluations, result, **kwargs):
 def evaluations_from_init(init):
     evaluations = OrderedDict()
     for raw_fact in init:
+        #ic(raw_fact)
+        #ic (raw_fact[1])
+        #ic(raw_fact[1].args[0].__dict__)
         fact = obj_from_value_expression(raw_fact)
+        #ic (fact)
         add_fact(evaluations, fact, result=INIT_EVALUATION, complexity=0)
     return evaluations
 

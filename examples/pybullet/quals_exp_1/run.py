@@ -641,10 +641,6 @@ def pddlstream_from_problem(unity_agent, problem, teleport=False):
             ('Pickable', pickup_id_1),
             ('Pickable', pickup_id_3),
             ('Pickable', pickup_id_4),
-            #('Pickable', pickup_id_2),
-            #('Pose',drawer,drawer_pose),
-            #('AtPose',drawer,drawer_pose),
-            #('Openable', movable_obj),
             Equal(('PickCost',), 1),
             Equal(('PlaceCost',), 1)]
 
